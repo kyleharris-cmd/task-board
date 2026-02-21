@@ -131,24 +131,17 @@ func (s *Service) GetTask(ctx context.Context, taskID string) (domain.Task, erro
 }
 
 func (s *Service) ListTaskStatus(ctx context.Context, state *domain.State) ([]TaskStatus, error) {
-	tasks, err := s.db.ListTasks(ctx, state)
+	rows, err := s.db.ListTaskStatusRows(ctx, state, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
-	now := time.Now().UTC()
-	out := make([]TaskStatus, 0, len(tasks))
-	for _, task := range tasks {
-		lease, exists, err := s.db.GetLease(ctx, task.ID)
-		if err != nil {
-			return nil, err
-		}
-		status := TaskStatus{Task: task}
-		if exists {
-			leaseCopy := lease
-			status.Lease = &leaseCopy
-			status.LeaseActive = lease.ExpiresAt.After(now)
-		}
-		out = append(out, status)
+	out := make([]TaskStatus, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, TaskStatus{
+			Task:        row.Task,
+			Lease:       row.Lease,
+			LeaseActive: row.LeaseActive,
+		})
 	}
 	return out, nil
 }
