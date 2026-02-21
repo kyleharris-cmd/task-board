@@ -18,7 +18,8 @@ func newRootCmd() *cobra.Command {
 	var repoRoot string
 
 	rootCmd := &cobra.Command{
-		Use:   "taskboard",
+		Use:     "tb",
+		Aliases: []string{"taskboard"},
 		Short: "Local task board with policy-driven workflow gates",
 	}
 
