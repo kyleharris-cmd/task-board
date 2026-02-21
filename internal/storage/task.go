@@ -12,6 +12,7 @@ import (
 
 type CreateTaskInput struct {
 	ID                string
+	ShortRef          string
 	BoardID           string
 	Title             string
 	Description       string
@@ -26,9 +27,10 @@ type CreateTaskInput struct {
 func (db *DB) CreateTask(ctx context.Context, in CreateTaskInput) error {
 	_, err := db.SQL.ExecContext(
 		ctx,
-		`INSERT INTO tasks (id, board_id, title, description, state, parent_id, required_for_parent, priority, task_type, rubric_passed, created_at, updated_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+		`INSERT INTO tasks (id, short_ref, board_id, title, description, state, parent_id, required_for_parent, priority, task_type, rubric_passed, created_at, updated_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
 		in.ID,
+		in.ShortRef,
 		in.BoardID,
 		in.Title,
 		strings.TrimSpace(in.Description),
@@ -47,6 +49,10 @@ func (db *DB) CreateTask(ctx context.Context, in CreateTaskInput) error {
 }
 
 func (db *DB) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
+	return db.getTaskBy(ctx, "id", taskID)
+}
+
+func (db *DB) GetTaskByShortRef(ctx context.Context, boardID, shortRef string) (domain.Task, error) {
 	var (
 		task              domain.Task
 		parentID          sql.NullString
@@ -56,13 +62,61 @@ func (db *DB) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
 	)
 	row := db.SQL.QueryRowContext(
 		ctx,
-		`SELECT id, title, COALESCE(description, ''), state, parent_id, required_for_parent, priority, task_type, rubric_passed, updated_at
-		 FROM tasks WHERE id = ?`,
-		taskID,
+		`SELECT id, short_ref, title, COALESCE(description, ''), state, parent_id, required_for_parent, priority, task_type, rubric_passed, updated_at
+		 FROM tasks WHERE board_id = ? AND short_ref = ?`,
+		boardID,
+		shortRef,
 	)
-	if err := row.Scan(&task.ID, &task.Title, &task.Description, &task.State, &parentID, &requiredForParent, &task.Priority, &task.TaskType, &rubricPassed, &updatedAtRaw); err != nil {
+	if err := row.Scan(&task.ID, &task.ShortRef, &task.Title, &task.Description, &task.State, &parentID, &requiredForParent, &task.Priority, &task.TaskType, &rubricPassed, &updatedAtRaw); err != nil {
 		if err == sql.ErrNoRows {
-			return domain.Task{}, fmt.Errorf("task %s not found", taskID)
+			return domain.Task{}, fmt.Errorf("task %s not found", shortRef)
+		}
+		return domain.Task{}, fmt.Errorf("get task by short ref: %w", err)
+	}
+	if parentID.Valid {
+		p := parentID.String
+		task.ParentID = &p
+	}
+	task.RequiredForParent = requiredForParent == 1
+	task.RubricPassed = rubricPassed == 1
+	if ts, err := time.Parse(time.RFC3339, updatedAtRaw); err == nil {
+		task.UpdatedAt = ts
+	}
+
+	var children int
+	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE parent_id = ?`, task.ID).Scan(&children); err != nil {
+		return domain.Task{}, fmt.Errorf("count child tasks: %w", err)
+	}
+	task.IsParent = children > 0
+	ready, err := db.AreRequiredChildrenRubricReady(ctx, task.ID)
+	if err != nil {
+		return domain.Task{}, err
+	}
+	task.ChildrenReady = ready
+	return task, nil
+}
+
+func (db *DB) getTaskBy(ctx context.Context, column, value string) (domain.Task, error) {
+	var (
+		task              domain.Task
+		parentID          sql.NullString
+		requiredForParent int
+		rubricPassed      int
+		updatedAtRaw      string
+	)
+	query := fmt.Sprintf(
+		`SELECT id, short_ref, title, COALESCE(description, ''), state, parent_id, required_for_parent, priority, task_type, rubric_passed, updated_at
+		 FROM tasks WHERE %s = ?`,
+		column,
+	)
+	row := db.SQL.QueryRowContext(
+		ctx,
+		query,
+		value,
+	)
+	if err := row.Scan(&task.ID, &task.ShortRef, &task.Title, &task.Description, &task.State, &parentID, &requiredForParent, &task.Priority, &task.TaskType, &rubricPassed, &updatedAtRaw); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Task{}, fmt.Errorf("task %s not found", value)
 		}
 		return domain.Task{}, fmt.Errorf("get task: %w", err)
 	}
@@ -77,12 +131,12 @@ func (db *DB) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
 	}
 
 	var children int
-	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE parent_id = ?`, taskID).Scan(&children); err != nil {
+	if err := db.SQL.QueryRowContext(ctx, `SELECT COUNT(*) FROM tasks WHERE parent_id = ?`, task.ID).Scan(&children); err != nil {
 		return domain.Task{}, fmt.Errorf("count child tasks: %w", err)
 	}
 	task.IsParent = children > 0
 
-	ready, err := db.AreRequiredChildrenRubricReady(ctx, taskID)
+	ready, err := db.AreRequiredChildrenRubricReady(ctx, task.ID)
 	if err != nil {
 		return domain.Task{}, err
 	}
@@ -92,7 +146,7 @@ func (db *DB) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
 }
 
 func (db *DB) ListTasks(ctx context.Context, state *domain.State) ([]domain.Task, error) {
-	query := `SELECT id, title, COALESCE(description, ''), state, parent_id, required_for_parent, priority, task_type, rubric_passed, updated_at FROM tasks`
+	query := `SELECT id, short_ref, title, COALESCE(description, ''), state, parent_id, required_for_parent, priority, task_type, rubric_passed, updated_at FROM tasks`
 	args := []any{}
 	if state != nil {
 		query += ` WHERE state = ?`
@@ -115,7 +169,7 @@ func (db *DB) ListTasks(ctx context.Context, state *domain.State) ([]domain.Task
 			rubricPassed      int
 			updatedAtRaw      string
 		)
-		if err := rows.Scan(&task.ID, &task.Title, &task.Description, &task.State, &parentID, &requiredForParent, &task.Priority, &task.TaskType, &rubricPassed, &updatedAtRaw); err != nil {
+		if err := rows.Scan(&task.ID, &task.ShortRef, &task.Title, &task.Description, &task.State, &parentID, &requiredForParent, &task.Priority, &task.TaskType, &rubricPassed, &updatedAtRaw); err != nil {
 			return nil, fmt.Errorf("scan task row: %w", err)
 		}
 		if parentID.Valid {

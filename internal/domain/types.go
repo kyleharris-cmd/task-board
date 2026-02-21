@@ -67,6 +67,7 @@ type Actor struct {
 
 type Task struct {
 	ID                string
+	ShortRef          string
 	Title             string
 	Description       string
 	State             State

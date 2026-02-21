@@ -47,7 +47,15 @@ func newParentCreateCmd(repoRoot *string) *cobra.Command {
 				if _, _, err := svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, content, actor); err != nil {
 					return err
 				}
-				cmd.Printf("created parent task %s\n", parentID)
+				parentTask, err := svc.GetTask(context.Background(), parentID)
+				if err != nil {
+					return err
+				}
+				ref := parentTask.ShortRef
+				if ref == "" {
+					ref = parentTask.ID
+				}
+				cmd.Printf("created parent task %s (id=%s)\n", ref, parentTask.ID)
 				return nil
 			})
 		},
@@ -141,12 +149,18 @@ func newChildCreateCmd(repoRoot *string) *cobra.Command {
 				return err
 			}
 			return withService(*repoRoot, func(svc *app.Service) error {
+				parentTask, err := svc.GetTask(context.Background(), parentID)
+				if err != nil {
+					return err
+				}
+				canonicalParentID := parentTask.ID
+
 				childID, err := svc.CreateTask(context.Background(), app.CreateTaskInput{
 					Title:             title,
 					Description:       description,
 					TaskType:          "implementation",
 					Priority:          priority,
-					ParentID:          &parentID,
+					ParentID:          &canonicalParentID,
 					RequiredForParent: requiredForParent,
 				})
 				if err != nil {
@@ -154,7 +168,7 @@ func newChildCreateCmd(repoRoot *string) *cobra.Command {
 				}
 				childDesign := strings.TrimSpace(brief)
 				if childDesign == "" {
-					childDesign, err = editContentWithEditor(defaultChildDesignTemplate(childID, parentID, title))
+					childDesign, err = editContentWithEditor(defaultChildDesignTemplate(childID, canonicalParentID, title))
 					if err != nil {
 						return err
 					}
@@ -166,12 +180,24 @@ func newChildCreateCmd(repoRoot *string) *cobra.Command {
 					return err
 				}
 
-				filesContext := defaultFileContextTemplate(parentID, files)
+				filesContext := defaultFileContextTemplate(canonicalParentID, files)
 				if _, _, err := svc.AddArtifact(context.Background(), childID, domain.ArtifactContext, filesContext, actor); err != nil {
 					return err
 				}
 
-				cmd.Printf("created child task %s under parent %s\n", childID, parentID)
+				childTask, err := svc.GetTask(context.Background(), childID)
+				if err != nil {
+					return err
+				}
+				childRef := childTask.ShortRef
+				if childRef == "" {
+					childRef = childTask.ID
+				}
+				parentRef := parentTask.ShortRef
+				if parentRef == "" {
+					parentRef = parentTask.ID
+				}
+				cmd.Printf("created child task %s (id=%s) under parent %s (id=%s)\n", childRef, childTask.ID, parentRef, parentTask.ID)
 				return nil
 			})
 		},

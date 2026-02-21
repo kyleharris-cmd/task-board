@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/kyleharris/task-board/internal/app"
@@ -28,8 +30,14 @@ type statusLoadedMsg struct {
 
 type statusTickMsg time.Time
 
+type statusOpMsg struct {
+	status string
+	err    error
+}
+
 type statusRow struct {
 	TaskID      string
+	ShortRef    string
 	ParentID    *string
 	Depth       int
 	HasChildren bool
@@ -39,11 +47,11 @@ type statusRow struct {
 	LeaseOwner  string
 	LeaseActive bool
 	AgentActive bool
-	Collapsed   bool
 }
 
 type statusModel struct {
 	svc           *app.Service
+	actor         domain.Actor
 	rows          []statusRow
 	visible       []statusRow
 	cursor        int
@@ -54,14 +62,24 @@ type statusModel struct {
 	filter        statusFilter
 	collapsed     map[string]bool
 	lastRefreshed time.Time
+	commandMode   bool
+	commandInput  textinput.Model
 }
 
-func newStatusModel(svc *app.Service) statusModel {
+func newStatusModel(svc *app.Service, actor domain.Actor) statusModel {
+	in := textinput.New()
+	in.Placeholder = "edit 1"
+	in.Prompt = ":"
+	in.CharLimit = 200
+	in.Width = 40
+
 	return statusModel{
-		svc:       svc,
-		status:    "Loading task status...",
-		filter:    filterAll,
-		collapsed: map[string]bool{},
+		svc:          svc,
+		actor:        actor,
+		status:       "Loading task status...",
+		filter:       filterAll,
+		collapsed:    map[string]bool{},
+		commandInput: in,
 	}
 }
 
@@ -70,6 +88,10 @@ func (m statusModel) Init() tea.Cmd {
 }
 
 func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.commandMode {
+		return m.updateCommandMode(msg)
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
@@ -89,6 +111,15 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = fmt.Sprintf("%d tasks", len(m.visible))
 		m.errText = ""
 		return m, nil
+	case statusOpMsg:
+		if msg.err != nil {
+			m.errText = msg.err.Error()
+			m.status = "Operation failed"
+			return m, nil
+		}
+		m.errText = ""
+		m.status = msg.status
+		return m, loadStatusCmd(m.svc)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
@@ -114,23 +145,60 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.collapsed[row.TaskID] = !m.collapsed[row.TaskID]
 			m.recomputeVisible()
+		case ":":
+			m.commandMode = true
+			m.commandInput.SetValue("")
+			m.commandInput.Focus()
+			return m, nil
 		}
 	}
 
 	return m, nil
 }
 
+func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.commandMode = false
+			m.commandInput.Blur()
+			return m, nil
+		case "enter":
+			cmdText := strings.TrimSpace(m.commandInput.Value())
+			m.commandMode = false
+			m.commandInput.Blur()
+			if cmdText == "" {
+				return m, nil
+			}
+			return m, runStatusCommand(m.svc, m.visible, m.actor, cmdText)
+		}
+	}
+	var cmd tea.Cmd
+	m.commandInput, cmd = m.commandInput.Update(msg)
+	return m, cmd
+}
+
 func (m statusModel) View() string {
 	if m.width == 0 {
-		m.width = 120
+		m.width = 140
 	}
 	if m.height == 0 {
-		m.height = 30
+		m.height = 34
 	}
 
 	header := m.renderHeader()
 	table := m.renderTable()
 	footer := m.renderFooter()
+
+	if m.commandMode {
+		cmdBox := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Render("Command: " + m.commandInput.View())
+		return strings.Join([]string{header, table, footer, cmdBox}, "\n")
+	}
 
 	return strings.Join([]string{header, table, footer}, "\n")
 }
@@ -151,7 +219,7 @@ func (m statusModel) renderHeader() string {
 }
 
 func (m statusModel) renderTable() string {
-	head := fmt.Sprintf("%-2s %-2s %-52s %-20s %-12s %-22s %-8s", "S", "[]", "Task", "Owner", "Lease", "State", "Updated")
+	head := fmt.Sprintf("%-3s %-2s %-2s %-8s %-44s %-20s %-12s %-22s %-8s", "#", "S", "[]", "Ref", "Task", "Owner", "Lease", "State", "Updated")
 	lines := []string{lipgloss.NewStyle().Bold(true).Render(head)}
 
 	if len(m.visible) == 0 {
@@ -163,11 +231,17 @@ func (m statusModel) renderTable() string {
 				prefix = "> "
 			}
 			treeLabel := m.treeLabel(row)
-			line := fmt.Sprintf("%s%s %-2s %-52s %-20s %-12s %-22s %-8s",
+			ref := row.ShortRef
+			if ref == "" {
+				ref = row.TaskID
+			}
+			line := fmt.Sprintf("%s%-3d %-2s %-2s %-8s %-44s %-20s %-12s %-22s %-8s",
 				prefix,
+				i+1,
 				statusIcon(row.State),
 				doneBox(row.State),
-				truncate(treeLabel, 52),
+				truncate(ref, 8),
+				truncate(treeLabel, 44),
 				truncate(row.LeaseOwner, 20),
 				leaseText(row),
 				truncate(string(row.State), 22),
@@ -180,11 +254,11 @@ func (m statusModel) renderTable() string {
 		}
 	}
 
-	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Height(m.height - 6).Render(strings.Join(lines, "\n"))
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Height(m.height - 7).Render(strings.Join(lines, "\n"))
 }
 
 func (m statusModel) renderFooter() string {
-	help := "j/k move  tab filter  space collapse parent  r refresh  q quit"
+	help := "j/k move  tab filter  space collapse parent  : command  r refresh  q quit"
 	status := m.status
 	if m.errText != "" {
 		status = fmt.Sprintf("%s: %s", m.status, m.errText)
@@ -305,6 +379,7 @@ func statusFromTaskStatus(s app.TaskStatus, depth int, hasChildren bool) statusR
 	}
 	return statusRow{
 		TaskID:      s.Task.ID,
+		ShortRef:    s.Task.ShortRef,
 		ParentID:    s.Task.ParentID,
 		Depth:       depth,
 		HasChildren: hasChildren,
@@ -348,4 +423,49 @@ func leaseText(row statusRow) string {
 		return "active"
 	}
 	return "expired"
+}
+
+func runStatusCommand(svc *app.Service, visible []statusRow, actor domain.Actor, cmdText string) tea.Cmd {
+	return func() tea.Msg {
+		parts := strings.Fields(cmdText)
+		if len(parts) != 2 {
+			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("expected format: edit <row-number>")}
+		}
+		if strings.ToLower(parts[0]) != "edit" {
+			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", parts[0])}
+		}
+		idx, err := strconv.Atoi(parts[1])
+		if err != nil || idx < 1 || idx > len(visible) {
+			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
+		}
+		row := visible[idx-1]
+		artifactType := domain.ArtifactDesign
+		if row.ParentID == nil && row.HasChildren {
+			artifactType = domain.ArtifactParentDesign
+		} else if row.ParentID != nil {
+			artifactType = domain.ArtifactChildDesign
+		}
+
+		initial := ""
+		if snap, ok, err := svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); err == nil && ok {
+			initial = snap.ContentSnapshot
+		} else if err != nil {
+			return statusOpMsg{status: "Edit failed", err: err}
+		}
+		if strings.TrimSpace(initial) == "" {
+			initial = fmt.Sprintf("# %s\n\n", artifactType)
+		}
+
+		content, err := editContentWithEditor(initial)
+		if err != nil {
+			return statusOpMsg{status: "Edit failed", err: err}
+		}
+		if strings.TrimSpace(content) == "" {
+			return statusOpMsg{status: "Edit canceled", err: fmt.Errorf("content was empty")}
+		}
+		if _, _, err := svc.AddArtifact(context.Background(), row.TaskID, artifactType, content, actor); err != nil {
+			return statusOpMsg{status: "Edit failed", err: err}
+		}
+		return statusOpMsg{status: fmt.Sprintf("updated %s for %s", artifactType, row.ShortRef)}
+	}
 }

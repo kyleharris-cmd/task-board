@@ -52,7 +52,15 @@ func newTaskCreateCmd(repoRoot *string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				cmd.Printf("created task %s\n", id)
+				task, err := svc.GetTask(context.Background(), id)
+				if err != nil {
+					return err
+				}
+				ref := task.ShortRef
+				if ref == "" {
+					ref = task.ID
+				}
+				cmd.Printf("created task %s (id=%s)\n", ref, task.ID)
 				return nil
 			})
 		},
@@ -93,7 +101,11 @@ func newTaskListCmd(repoRoot *string) *cobra.Command {
 					if t.ParentID != nil {
 						parent = *t.ParentID
 					}
-					cmd.Printf("%s | %s | %s | type=%s | parent=%s | rubric=%t\n", t.ID, t.State, t.Title, t.TaskType, parent, t.RubricPassed)
+					ref := t.ShortRef
+					if ref == "" {
+						ref = t.ID
+					}
+					cmd.Printf("%s | id=%s | %s | %s | type=%s | parent=%s | rubric=%t\n", ref, t.ID, t.State, t.Title, t.TaskType, parent, t.RubricPassed)
 				}
 				return nil
 			})

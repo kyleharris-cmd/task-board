@@ -107,6 +107,12 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 4. Pick up child task: `tb pickup <child-id>`.
 5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
 
+## Task References
+
+- Every task gets a short human-friendly reference (`T-1`, `T-2`, ...).
+- Commands accept either short refs or full internal IDs.
+- `tb task list` shows both short ref and internal ID.
+
 ## Status Board (Read-First)
 
 - Run `tb status` (or `tb stat`) to open a git-log style modal board.
@@ -114,6 +120,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
 - Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `q` quit.
+- Command mode: press `:` then run `edit <row-number>` (example: `:edit 1`) to edit the selected row's primary design artifact.
 
 ## Actor Identity Rules
 

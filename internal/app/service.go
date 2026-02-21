@@ -58,6 +58,10 @@ func OpenService(repoRoot string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := db.EnsureTaskShortRefs(context.Background(), defaultBoardID); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 
 	return &Service{
 		repoRoot: absRoot,
@@ -83,6 +87,10 @@ type CreateTaskInput struct {
 func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, error) {
 	now := time.Now().UTC()
 	id := newTaskID(now)
+	shortRef, err := s.db.AllocateTaskShortRef(ctx, defaultBoardID)
+	if err != nil {
+		return "", err
+	}
 	if strings.TrimSpace(in.TaskType) == "" {
 		in.TaskType = "default"
 	}
@@ -91,6 +99,7 @@ func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, e
 	}
 	if err := s.db.CreateTask(ctx, storage.CreateTaskInput{
 		ID:                id,
+		ShortRef:          shortRef,
 		BoardID:           defaultBoardID,
 		Title:             strings.TrimSpace(in.Title),
 		Description:       in.Description,
@@ -114,7 +123,7 @@ func (s *Service) ListTasks(ctx context.Context, state *domain.State) ([]domain.
 }
 
 func (s *Service) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
-	return s.db.GetTask(ctx, taskID)
+	return s.resolveTaskReference(ctx, taskID)
 }
 
 func (s *Service) ListTaskStatus(ctx context.Context, state *domain.State) ([]TaskStatus, error) {
@@ -141,7 +150,11 @@ func (s *Service) ListTaskStatus(ctx context.Context, state *domain.State) ([]Ta
 }
 
 func (s *Service) GetLatestArtifact(ctx context.Context, taskID string, artifactType domain.ArtifactType) (ArtifactSnapshot, bool, error) {
-	snap, ok, err := s.db.LatestArtifactSnapshot(ctx, taskID, artifactType)
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return ArtifactSnapshot{}, false, err
+	}
+	snap, ok, err := s.db.LatestArtifactSnapshot(ctx, task.ID, artifactType)
 	if err != nil {
 		return ArtifactSnapshot{}, false, err
 	}
@@ -162,12 +175,12 @@ type ClaimTaskInput struct {
 
 func (s *Service) ClaimTask(ctx context.Context, in ClaimTaskInput) (time.Time, error) {
 	now := time.Now().UTC()
-	task, err := s.db.GetTask(ctx, in.TaskID)
+	task, err := s.resolveTaskReference(ctx, in.TaskID)
 	if err != nil {
 		return time.Time{}, err
 	}
 
-	lease, exists, err := s.db.GetLease(ctx, in.TaskID)
+	lease, exists, err := s.db.GetLease(ctx, task.ID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -188,7 +201,7 @@ func (s *Service) ClaimTask(ctx context.Context, in ClaimTaskInput) (time.Time, 
 	}
 
 	expiresAt := now.Add(time.Duration(ttl) * time.Minute)
-	if err := s.db.UpsertLease(ctx, in.TaskID, in.Actor, expiresAt, in.AutoRenew, now); err != nil {
+	if err := s.db.UpsertLease(ctx, task.ID, in.Actor, expiresAt, in.AutoRenew, now); err != nil {
 		return time.Time{}, err
 	}
 
@@ -197,7 +210,11 @@ func (s *Service) ClaimTask(ctx context.Context, in ClaimTaskInput) (time.Time, 
 
 func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domain.Actor, ttlMinutes int) (time.Time, error) {
 	now := time.Now().UTC()
-	lease, exists, err := s.db.GetLease(ctx, taskID)
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return time.Time{}, err
+	}
+	lease, exists, err := s.db.GetLease(ctx, task.ID)
 	if err != nil {
 		return time.Time{}, err
 	}
@@ -211,10 +228,6 @@ func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domai
 		return time.Time{}, fmt.Errorf("task lease already expired at %s", lease.ExpiresAt.Format(time.RFC3339))
 	}
 
-	task, err := s.db.GetTask(ctx, taskID)
-	if err != nil {
-		return time.Time{}, err
-	}
 	if ttlMinutes <= 0 {
 		if rule, ok := s.policy.LeaseRuleForTaskType(task.TaskType); ok {
 			ttlMinutes = rule.DefaultTTLMinutes
@@ -224,7 +237,7 @@ func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domai
 	}
 
 	expiresAt := now.Add(time.Duration(ttlMinutes) * time.Minute)
-	if err := s.db.UpsertLease(ctx, taskID, actor, expiresAt, lease.AutoRenew, now); err != nil {
+	if err := s.db.UpsertLease(ctx, task.ID, actor, expiresAt, lease.AutoRenew, now); err != nil {
 		return time.Time{}, err
 	}
 
@@ -232,7 +245,11 @@ func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domai
 }
 
 func (s *Service) ReleaseTaskLease(ctx context.Context, taskID string, actor domain.Actor) error {
-	lease, exists, err := s.db.GetLease(ctx, taskID)
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	lease, exists, err := s.db.GetLease(ctx, task.ID)
 	if err != nil {
 		return err
 	}
@@ -242,7 +259,7 @@ func (s *Service) ReleaseTaskLease(ctx context.Context, taskID string, actor dom
 	if lease.ActorID != actor.ID || lease.ActorType != actor.Type {
 		return fmt.Errorf("task lease is owned by %s:%s", lease.ActorType, lease.ActorID)
 	}
-	return s.db.DeleteLease(ctx, taskID)
+	return s.db.DeleteLease(ctx, task.ID)
 }
 
 type TransitionInput struct {
@@ -255,25 +272,25 @@ type TransitionInput struct {
 
 func (s *Service) TransitionTask(ctx context.Context, in TransitionInput) error {
 	now := time.Now().UTC()
-	task, err := s.db.GetTask(ctx, in.TaskID)
+	task, err := s.resolveTaskReference(ctx, in.TaskID)
 	if err != nil {
 		return err
 	}
 
-	lease, exists, err := s.db.GetLease(ctx, in.TaskID)
+	lease, exists, err := s.db.GetLease(ctx, task.ID)
 	if err != nil {
 		return err
 	}
 	hasValidLease := exists && lease.ActorID == in.Actor.ID && lease.ActorType == in.Actor.Type && lease.ExpiresAt.After(now)
 
-	artifacts, err := s.db.PresentArtifactTypes(ctx, in.TaskID)
+	artifacts, err := s.db.PresentArtifactTypes(ctx, task.ID)
 	if err != nil {
 		return err
 	}
 
 	childrenReady := in.ChildrenReady
 	if task.IsParent {
-		ready, err := s.db.AreRequiredChildrenRubricReady(ctx, in.TaskID)
+		ready, err := s.db.AreRequiredChildrenRubricReady(ctx, task.ID)
 		if err != nil {
 			return err
 		}
@@ -291,11 +308,11 @@ func (s *Service) TransitionTask(ctx context.Context, in TransitionInput) error 
 		return err
 	}
 
-	if err := s.db.UpdateTaskState(ctx, in.TaskID, in.ToState, now); err != nil {
+	if err := s.db.UpdateTaskState(ctx, task.ID, in.ToState, now); err != nil {
 		return err
 	}
 	return s.db.RecordTransition(ctx, storage.TransitionEvent{
-		TaskID:     in.TaskID,
+		TaskID:     task.ID,
 		FromState:  task.State,
 		ToState:    in.ToState,
 		Actor:      in.Actor,
@@ -306,28 +323,29 @@ func (s *Service) TransitionTask(ctx context.Context, in TransitionInput) error 
 
 func (s *Service) AddArtifact(ctx context.Context, taskID string, artifactType domain.ArtifactType, content string, actor domain.Actor) (string, int, error) {
 	now := time.Now().UTC()
-	if _, err := s.db.GetTask(ctx, taskID); err != nil {
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
 		return "", 0, err
 	}
-	version, err := s.db.LatestArtifactVersion(ctx, taskID, artifactType)
+	version, err := s.db.LatestArtifactVersion(ctx, task.ID, artifactType)
 	if err != nil {
 		return "", 0, err
 	}
 	version++
 
-	taskFolder := filepath.Join(s.taskDir, taskID)
+	taskFolder := filepath.Join(s.taskDir, task.ID)
 	if err := os.MkdirAll(taskFolder, 0o755); err != nil {
 		return "", 0, fmt.Errorf("create task artifact folder: %w", err)
 	}
 	filename := fmt.Sprintf("%s.v%d.md", artifactType, version)
-	repoRelative := filepath.ToSlash(filepath.Join(".taskboard", "tasks", taskID, filename))
+	repoRelative := filepath.ToSlash(filepath.Join(".taskboard", "tasks", task.ID, filename))
 	absPath := filepath.Join(s.repoRoot, repoRelative)
 	if err := os.WriteFile(absPath, []byte(content), 0o644); err != nil {
 		return "", 0, fmt.Errorf("write artifact file: %w", err)
 	}
 
 	if err := s.db.RecordArtifact(ctx, storage.ArtifactEvent{
-		TaskID:          taskID,
+		TaskID:          task.ID,
 		ArtifactType:    artifactType,
 		MarkdownPath:    repoRelative,
 		ContentSnapshot: content,
@@ -343,11 +361,12 @@ func (s *Service) AddArtifact(ctx context.Context, taskID string, artifactType d
 
 func (s *Service) EvaluateRubric(ctx context.Context, taskID, rubricVersion string, requiredFieldsComplete, pass bool, notes string, actor domain.Actor) error {
 	now := time.Now().UTC()
-	if _, err := s.db.GetTask(ctx, taskID); err != nil {
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
 		return err
 	}
 	return s.db.RecordRubricResult(ctx, storage.RubricEvent{
-		TaskID:                 taskID,
+		TaskID:                 task.ID,
 		RubricVersion:          rubricVersion,
 		RequiredFieldsComplete: requiredFieldsComplete,
 		Pass:                   pass,
@@ -358,19 +377,19 @@ func (s *Service) EvaluateRubric(ctx context.Context, taskID, rubricVersion stri
 }
 
 func (s *Service) ReadyCheck(ctx context.Context, taskID string, actor domain.Actor) error {
-	task, err := s.db.GetTask(ctx, taskID)
+	task, err := s.resolveTaskReference(ctx, taskID)
 	if err != nil {
 		return err
 	}
-	lease, exists, err := s.db.GetLease(ctx, taskID)
+	lease, exists, err := s.db.GetLease(ctx, task.ID)
 	if err != nil {
 		return err
 	}
-	artifacts, err := s.db.PresentArtifactTypes(ctx, taskID)
+	artifacts, err := s.db.PresentArtifactTypes(ctx, task.ID)
 	if err != nil {
 		return err
 	}
-	childrenReady, err := s.db.AreRequiredChildrenRubricReady(ctx, taskID)
+	childrenReady, err := s.db.AreRequiredChildrenRubricReady(ctx, task.ID)
 	if err != nil {
 		return err
 	}
@@ -386,4 +405,20 @@ func (s *Service) ReadyCheck(ctx context.Context, taskID string, actor domain.Ac
 
 func newTaskID(now time.Time) string {
 	return fmt.Sprintf("T-%d", now.UnixNano())
+}
+
+func (s *Service) resolveTaskReference(ctx context.Context, ref string) (domain.Task, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return domain.Task{}, fmt.Errorf("task reference cannot be empty")
+	}
+	task, err := s.db.GetTask(ctx, ref)
+	if err == nil {
+		return task, nil
+	}
+	taskByShort, shortErr := s.db.GetTaskByShortRef(ctx, defaultBoardID, ref)
+	if shortErr == nil {
+		return taskByShort, nil
+	}
+	return domain.Task{}, err
 }
