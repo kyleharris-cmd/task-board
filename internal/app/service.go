@@ -30,6 +30,12 @@ type ArtifactSnapshot struct {
 	CreatedAt       time.Time
 }
 
+type TaskStatus struct {
+	Task        domain.Task
+	Lease       *domain.Lease
+	LeaseActive bool
+}
+
 func OpenService(repoRoot string) (*Service, error) {
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -109,6 +115,29 @@ func (s *Service) ListTasks(ctx context.Context, state *domain.State) ([]domain.
 
 func (s *Service) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
 	return s.db.GetTask(ctx, taskID)
+}
+
+func (s *Service) ListTaskStatus(ctx context.Context, state *domain.State) ([]TaskStatus, error) {
+	tasks, err := s.db.ListTasks(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	out := make([]TaskStatus, 0, len(tasks))
+	for _, task := range tasks {
+		lease, exists, err := s.db.GetLease(ctx, task.ID)
+		if err != nil {
+			return nil, err
+		}
+		status := TaskStatus{Task: task}
+		if exists {
+			leaseCopy := lease
+			status.Lease = &leaseCopy
+			status.LeaseActive = lease.ExpiresAt.After(now)
+		}
+		out = append(out, status)
+	}
+	return out, nil
 }
 
 func (s *Service) GetLatestArtifact(ctx context.Context, taskID string, artifactType domain.ArtifactType) (ArtifactSnapshot, bool, error) {

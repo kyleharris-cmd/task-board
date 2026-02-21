@@ -41,6 +41,7 @@ This repository now includes:
 - `taskboard parent design-edit <parent-id>`
 - `taskboard child create --parent-id ... --title ... --files ...`
 - `taskboard pickup <child-id>`
+- `taskboard status` (alias: `taskboard stat`)
 
 ## HTTP API (v1)
 
@@ -89,6 +90,14 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 3. Create child tasks from parent design: `tb child create --parent-id ... --title ... --files ...`.
 4. Pick up child task: `tb pickup <child-id>`.
 5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
+
+## Status Board (Read-First)
+
+- Run `tb status` (or `tb stat`) to open a git-log style modal board.
+- Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
+- Auto-refreshes every 5 seconds for async monitoring.
+- Shows agent-active work via `active[AGENT]` lease marker.
+- Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `q` quit.
 
 ## Actor Identity Rules
 

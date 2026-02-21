@@ -38,6 +38,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newParentCmd(&repoRoot))
 	rootCmd.AddCommand(newChildCmd(&repoRoot))
 	rootCmd.AddCommand(newPickupCmd(&repoRoot))
+	rootCmd.AddCommand(newStatusCmd(&repoRoot))
 
 	return rootCmd
 }
