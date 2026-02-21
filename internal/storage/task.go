@@ -203,3 +203,37 @@ func (db *DB) PresentArtifactTypes(ctx context.Context, taskID string) ([]domain
 
 	return out, nil
 }
+
+type ArtifactSnapshot struct {
+	MarkdownPath    string
+	ContentSnapshot string
+	Version         int
+	CreatedAt       time.Time
+}
+
+func (db *DB) LatestArtifactSnapshot(ctx context.Context, taskID string, artifactType domain.ArtifactType) (ArtifactSnapshot, bool, error) {
+	var (
+		snapshot   ArtifactSnapshot
+		createdRaw string
+	)
+	row := db.SQL.QueryRowContext(
+		ctx,
+		`SELECT markdown_path, content_snapshot, version, created_at
+		 FROM task_artifacts
+		 WHERE task_id = ? AND artifact_type = ?
+		 ORDER BY version DESC
+		 LIMIT 1`,
+		taskID,
+		string(artifactType),
+	)
+	if err := row.Scan(&snapshot.MarkdownPath, &snapshot.ContentSnapshot, &snapshot.Version, &createdRaw); err != nil {
+		if err == sql.ErrNoRows {
+			return ArtifactSnapshot{}, false, nil
+		}
+		return ArtifactSnapshot{}, false, fmt.Errorf("query latest artifact snapshot: %w", err)
+	}
+	if ts, err := time.Parse(time.RFC3339, createdRaw); err == nil {
+		snapshot.CreatedAt = ts
+	}
+	return snapshot, true, nil
+}

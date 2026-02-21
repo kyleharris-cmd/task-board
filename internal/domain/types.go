@@ -94,6 +94,8 @@ type ArtifactType string
 const (
 	ArtifactContext             ArtifactType = "context"
 	ArtifactDesign              ArtifactType = "design"
+	ArtifactParentDesign        ArtifactType = "parent_design"
+	ArtifactChildDesign         ArtifactType = "child_design"
 	ArtifactRubricReview        ArtifactType = "rubric_review"
 	ArtifactImplementationNotes ArtifactType = "implementation_notes"
 	ArtifactTestReport          ArtifactType = "test_report"
@@ -103,6 +105,8 @@ const (
 var AllArtifactTypes = []ArtifactType{
 	ArtifactContext,
 	ArtifactDesign,
+	ArtifactParentDesign,
+	ArtifactChildDesign,
 	ArtifactRubricReview,
 	ArtifactImplementationNotes,
 	ArtifactTestReport,

@@ -32,6 +32,15 @@ This repository now includes:
 - `taskboard rubric evaluate --id ... --pass --required-fields-complete --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard tui --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard serve --addr 127.0.0.1:7327`
+- `taskboard start <task-id>`
+- `taskboard design <task-id>`
+- `taskboard review <task-id> --pass|--fail`
+- `taskboard implement <task-id>`
+- `taskboard finish <task-id>`
+- `taskboard parent create --title ...`
+- `taskboard parent design-edit <parent-id>`
+- `taskboard child create --parent-id ... --title ... --files ...`
+- `taskboard pickup <child-id>`
 
 ## HTTP API (v1)
 
@@ -68,6 +77,24 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - `.taskboard/board.db`
 - `.taskboard/policy.yaml`
 - `.taskboard/tasks/<task-id>/...`
+- `.taskboard/WORKFLOW.md`
+- `.taskboard/PROMPTS/idea-to-design.txt`
+- `.taskboard/PROMPTS/design-to-parent-and-children.txt`
+- `.taskboard/PROMPTS/implement-child-task.txt`
+
+## Workflow-First Usage
+
+1. In target repo, run `tb init`.
+2. Create parent design task: `tb parent create --title \"...\"`.
+3. Create child tasks from parent design: `tb child create --parent-id ... --title ... --files ...`.
+4. Pick up child task: `tb pickup <child-id>`.
+5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
+
+## Actor Identity Rules
+
+- Human workflow commands default to git identity (`user.name`, `user.email`).
+- If missing, `tb` prompts to set git identity and asks repo-local vs global scope.
+- Agent calls must explicitly declare actor identity (`--actor-type agent --actor-id ... --actor-name ...`).
 
 ## Development
 

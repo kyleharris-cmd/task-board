@@ -23,6 +23,13 @@ type Service struct {
 	db       *storage.DB
 }
 
+type ArtifactSnapshot struct {
+	MarkdownPath    string
+	ContentSnapshot string
+	Version         int
+	CreatedAt       time.Time
+}
+
 func OpenService(repoRoot string) (*Service, error) {
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -98,6 +105,23 @@ func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, e
 
 func (s *Service) ListTasks(ctx context.Context, state *domain.State) ([]domain.Task, error) {
 	return s.db.ListTasks(ctx, state)
+}
+
+func (s *Service) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
+	return s.db.GetTask(ctx, taskID)
+}
+
+func (s *Service) GetLatestArtifact(ctx context.Context, taskID string, artifactType domain.ArtifactType) (ArtifactSnapshot, bool, error) {
+	snap, ok, err := s.db.LatestArtifactSnapshot(ctx, taskID, artifactType)
+	if err != nil {
+		return ArtifactSnapshot{}, false, err
+	}
+	return ArtifactSnapshot{
+		MarkdownPath:    snap.MarkdownPath,
+		ContentSnapshot: snap.ContentSnapshot,
+		Version:         snap.Version,
+		CreatedAt:       snap.CreatedAt,
+	}, ok, nil
 }
 
 type ClaimTaskInput struct {

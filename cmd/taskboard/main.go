@@ -30,6 +30,14 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newRubricCmd(&repoRoot))
 	rootCmd.AddCommand(newTUICmd(&repoRoot))
 	rootCmd.AddCommand(newServeCmd(&repoRoot))
+	rootCmd.AddCommand(newStartCmd(&repoRoot))
+	rootCmd.AddCommand(newDesignCmd(&repoRoot))
+	rootCmd.AddCommand(newReviewCmd(&repoRoot))
+	rootCmd.AddCommand(newImplementCmd(&repoRoot))
+	rootCmd.AddCommand(newFinishCmd(&repoRoot))
+	rootCmd.AddCommand(newParentCmd(&repoRoot))
+	rootCmd.AddCommand(newChildCmd(&repoRoot))
+	rootCmd.AddCommand(newPickupCmd(&repoRoot))
 
 	return rootCmd
 }

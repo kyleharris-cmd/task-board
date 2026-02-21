@@ -1,0 +1,7 @@
+Orient yourself before implementing:
+
+1. Read package conventions: README.md, AGENTS.md, CLAUDE.md (if available).
+2. Read the parent design artifact.
+3. Read the child task design and context/files list.
+4. Ask questions if needed, then implement.
+5. Test, document, and update taskboard artifacts and status.

@@ -48,6 +48,9 @@ func newInitCmd(repoRoot *string) *cobra.Command {
 			if err := writeDefaultPolicyIfMissing(policyPath); err != nil {
 				return err
 			}
+			if err := writeTaskboardBootstrap(absRoot, taskboardDir); err != nil {
+				return err
+			}
 
 			cmd.Printf("initialized task board in %s\n", taskboardDir)
 			return nil

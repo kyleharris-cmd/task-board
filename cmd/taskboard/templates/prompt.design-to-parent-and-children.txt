@@ -1,0 +1,9 @@
+Use the approved design to:
+
+1. Create one parent task whose source of record is the design.
+2. Break the design into child tasks for major components.
+3. For each child task, include:
+   - Parent task linkage
+   - Child-specific implementation design details
+   - Required files to read for full context
+4. Ensure each child task can be picked up by a fresh agent without extra context.
