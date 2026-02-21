@@ -22,6 +22,24 @@ Alternative:
 make install
 ```
 
+## Getting Started
+
+From the `task-board` repo:
+
+```bash
+make install
+source ~/.zshrc
+tb --help
+```
+
+Then in any target project repo:
+
+```bash
+cd /path/to/your/repo
+tb init
+tb stat
+```
+
 ## Quick Start (In Any Target Repo)
 
 ```bash
