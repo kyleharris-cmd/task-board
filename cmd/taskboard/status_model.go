@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sort"
 	"strconv"
@@ -175,7 +176,7 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if cmdText == "" {
 				return m, nil
 			}
-			return m, runStatusCommand(m.svc, m.visible, m.actor, cmdText)
+			return m, runStatusCommand(m.svc, m.visible, m.cursor, m.actor, cmdText)
 		}
 	}
 	var cmd tea.Cmd
@@ -258,7 +259,7 @@ func (m statusModel) renderTable() string {
 }
 
 func (m statusModel) renderFooter() string {
-	help := "j/k move  tab filter  space collapse parent  : (e)dit <row>  r refresh  q quit"
+	help := "j/k move  tab filter  space collapse parent  : (e)dit <row> | cp \"name\" | cc \"name\"  r refresh  q quit"
 	status := m.status
 	if m.errText != "" {
 		status = fmt.Sprintf("%s: %s", m.status, m.errText)
@@ -427,48 +428,149 @@ func leaseText(row statusRow) string {
 	return "expired"
 }
 
-func runStatusCommand(svc *app.Service, visible []statusRow, actor domain.Actor, cmdText string) tea.Cmd {
+func runStatusCommand(svc *app.Service, visible []statusRow, cursor int, actor domain.Actor, cmdText string) tea.Cmd {
 	return func() tea.Msg {
-		parts := strings.Fields(cmdText)
-		if len(parts) != 2 {
-			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("expected format: (e)dit <row-number>")}
-		}
-		verb := strings.ToLower(parts[0])
-		if verb != "edit" && verb != "e" {
-			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", parts[0])}
-		}
-		idx, err := strconv.Atoi(parts[1])
-		if err != nil || idx < 1 || idx > len(visible) {
-			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
-		}
-		row := visible[idx-1]
-		artifactType := domain.ArtifactDesign
-		if row.ParentID == nil && row.HasChildren {
-			artifactType = domain.ArtifactParentDesign
-		} else if row.ParentID != nil {
-			artifactType = domain.ArtifactChildDesign
-		}
-
-		initial := ""
-		if snap, ok, err := svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); err == nil && ok {
-			initial = snap.ContentSnapshot
-		} else if err != nil {
-			return statusOpMsg{status: "Edit failed", err: err}
-		}
-		if strings.TrimSpace(initial) == "" {
-			initial = fmt.Sprintf("# %s\n\n", artifactType)
-		}
-
-		content, err := editContentWithEditor(initial)
+		verb, arg, err := parseStatusCommand(cmdText)
 		if err != nil {
-			return statusOpMsg{status: "Edit failed", err: err}
+			return statusOpMsg{status: "Invalid command", err: err}
 		}
-		if strings.TrimSpace(content) == "" {
-			return statusOpMsg{status: "Edit canceled", err: fmt.Errorf("content was empty")}
+
+		switch verb {
+		case "edit", "e":
+			idx, convErr := strconv.Atoi(arg)
+			if convErr != nil || idx < 1 || idx > len(visible) {
+				return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
+			}
+			row := visible[idx-1]
+			artifactType := domain.ArtifactDesign
+			if row.ParentID == nil && row.HasChildren {
+				artifactType = domain.ArtifactParentDesign
+			} else if row.ParentID != nil {
+				artifactType = domain.ArtifactChildDesign
+			}
+
+			initial := ""
+			if snap, ok, lookupErr := svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); lookupErr == nil && ok {
+				initial = snap.ContentSnapshot
+			} else if lookupErr != nil {
+				return statusOpMsg{status: "Edit failed", err: lookupErr}
+			}
+			if strings.TrimSpace(initial) == "" {
+				initial = fmt.Sprintf("# %s\n\n", artifactType)
+			}
+
+			content, editErr := editContentWithEditor(initial)
+			if editErr != nil {
+				return statusOpMsg{status: "Edit failed", err: editErr}
+			}
+			if strings.TrimSpace(content) == "" {
+				return statusOpMsg{status: "Edit canceled", err: fmt.Errorf("content was empty")}
+			}
+			if _, _, addErr := svc.AddArtifact(context.Background(), row.TaskID, artifactType, content, actor); addErr != nil {
+				return statusOpMsg{status: "Edit failed", err: addErr}
+			}
+			ref := row.ShortRef
+			if ref == "" {
+				ref = row.TaskID
+			}
+			return statusOpMsg{status: fmt.Sprintf("updated %s for %s", artifactType, ref)}
+		case "cp":
+			parentID, createErr := svc.CreateTask(context.Background(), app.CreateTaskInput{
+				Title:       arg,
+				Description: "Created from status board command mode",
+				TaskType:    "design",
+				Priority:    2,
+			})
+			if createErr != nil {
+				return statusOpMsg{status: "Create parent failed", err: createErr}
+			}
+			parentDesign := fmt.Sprintf("# Parent Design: %s\n\n## Goal\n- \n\n## Scope\n- \n\n## Components\n- \n", arg)
+			if _, _, addErr := svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, parentDesign, actor); addErr != nil {
+				return statusOpMsg{status: "Create parent failed", err: addErr}
+			}
+			task, lookupErr := svc.GetTask(context.Background(), parentID)
+			if lookupErr != nil {
+				return statusOpMsg{status: "Create parent failed", err: lookupErr}
+			}
+			ref := task.ShortRef
+			if ref == "" {
+				ref = task.ID
+			}
+			return statusOpMsg{status: fmt.Sprintf("created parent %s (%s)", ref, arg)}
+		case "cc":
+			if len(visible) == 0 {
+				return statusOpMsg{status: "Create child failed", err: errors.New("no rows visible")}
+			}
+			if cursor < 0 || cursor >= len(visible) {
+				cursor = 0
+			}
+			base := visible[cursor]
+			parentID := base.TaskID
+			if base.ParentID != nil {
+				parentID = *base.ParentID
+			}
+
+			childID, createErr := svc.CreateTask(context.Background(), app.CreateTaskInput{
+				Title:             arg,
+				Description:       "Created from status board command mode",
+				TaskType:          "implementation",
+				Priority:          3,
+				ParentID:          &parentID,
+				RequiredForParent: true,
+			})
+			if createErr != nil {
+				return statusOpMsg{status: "Create child failed", err: createErr}
+			}
+			childDesign := fmt.Sprintf("# Child Design: %s\n\n## Objective\n- \n\n## Plan\n- \n", arg)
+			if _, _, addErr := svc.AddArtifact(context.Background(), childID, domain.ArtifactChildDesign, childDesign, actor); addErr != nil {
+				return statusOpMsg{status: "Create child failed", err: addErr}
+			}
+			childContext := fmt.Sprintf("# Context\n\nParent Task: %s\n\nFiles to read first:\n- (add files)\n", parentID)
+			if _, _, addErr := svc.AddArtifact(context.Background(), childID, domain.ArtifactContext, childContext, actor); addErr != nil {
+				return statusOpMsg{status: "Create child failed", err: addErr}
+			}
+			task, lookupErr := svc.GetTask(context.Background(), childID)
+			if lookupErr != nil {
+				return statusOpMsg{status: "Create child failed", err: lookupErr}
+			}
+			ref := task.ShortRef
+			if ref == "" {
+				ref = task.ID
+			}
+			return statusOpMsg{status: fmt.Sprintf("created child %s (%s)", ref, arg)}
+		default:
+			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", verb)}
 		}
-		if _, _, err := svc.AddArtifact(context.Background(), row.TaskID, artifactType, content, actor); err != nil {
-			return statusOpMsg{status: "Edit failed", err: err}
+	}
+}
+
+func parseStatusCommand(cmdText string) (verb, arg string, err error) {
+	cmdText = strings.TrimSpace(cmdText)
+	if cmdText == "" {
+		return "", "", fmt.Errorf("empty command")
+	}
+	parts := strings.Fields(cmdText)
+	if len(parts) < 2 {
+		return "", "", fmt.Errorf("expected command and argument")
+	}
+	verb = strings.ToLower(parts[0])
+	switch verb {
+	case "edit", "e":
+		if len(parts) != 2 {
+			return "", "", fmt.Errorf("expected format: (e)dit <row-number>")
 		}
-		return statusOpMsg{status: fmt.Sprintf("updated %s for %s", artifactType, row.ShortRef)}
+		return verb, parts[1], nil
+	case "cp", "cc":
+		title := strings.TrimSpace(cmdText[len(parts[0]):])
+		if strings.HasPrefix(title, "\"") && strings.HasSuffix(title, "\"") && len(title) >= 2 {
+			title = title[1 : len(title)-1]
+		}
+		title = strings.TrimSpace(title)
+		if title == "" {
+			return "", "", fmt.Errorf("task name cannot be empty")
+		}
+		return verb, title, nil
+	default:
+		return "", "", fmt.Errorf("unsupported command %q", verb)
 	}
 }

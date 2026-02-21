@@ -120,7 +120,10 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
 - Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `q` quit.
-- Command mode: press `:` then run `(e)dit <row-number>` (examples: `:e 1`, `:edit 1`) to edit the selected row's primary design artifact.
+- Command mode shortcuts:
+- `:(e)dit <row-number>`: edit the selected row's primary design artifact.
+- `:cp "task name"`: create parent task from status board.
+- `:cc "task name"`: create child task under current row parent context.
 
 ## Actor Identity Rules
 
