@@ -120,7 +120,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
 - Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `q` quit.
-- Command mode: press `:` then run `edit <row-number>` (example: `:edit 1`) to edit the selected row's primary design artifact.
+- Command mode: press `:` then run `(e)dit <row-number>` (examples: `:e 1`, `:edit 1`) to edit the selected row's primary design artifact.
 
 ## Actor Identity Rules
 

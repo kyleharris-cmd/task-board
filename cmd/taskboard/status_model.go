@@ -258,7 +258,7 @@ func (m statusModel) renderTable() string {
 }
 
 func (m statusModel) renderFooter() string {
-	help := "j/k move  tab filter  space collapse parent  : command  r refresh  q quit"
+	help := "j/k move  tab filter  space collapse parent  : (e)dit <row>  r refresh  q quit"
 	status := m.status
 	if m.errText != "" {
 		status = fmt.Sprintf("%s: %s", m.status, m.errText)
@@ -429,9 +429,10 @@ func runStatusCommand(svc *app.Service, visible []statusRow, actor domain.Actor,
 	return func() tea.Msg {
 		parts := strings.Fields(cmdText)
 		if len(parts) != 2 {
-			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("expected format: edit <row-number>")}
+			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("expected format: (e)dit <row-number>")}
 		}
-		if strings.ToLower(parts[0]) != "edit" {
+		verb := strings.ToLower(parts[0])
+		if verb != "edit" && verb != "e" {
 			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", parts[0])}
 		}
 		idx, err := strconv.Atoi(parts[1])
