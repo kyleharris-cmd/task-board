@@ -58,6 +58,10 @@ func OpenService(repoRoot string) (*Service, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := db.Migrate(context.Background()); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	if err := db.EnsureTaskShortRefs(context.Background(), defaultBoardID); err != nil {
 		_ = db.Close()
 		return nil, err
