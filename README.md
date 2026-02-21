@@ -119,7 +119,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
-- Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `q` quit.
+- Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `?` open command palette/help, `q` quit.
 - Command mode shortcuts:
 - `:(e)dit <row-number>`: edit the selected row's primary design artifact.
 - `:cp "task name"`: create parent task from status board.

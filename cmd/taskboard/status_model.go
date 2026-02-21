@@ -65,6 +65,7 @@ type statusModel struct {
 	lastRefreshed time.Time
 	commandMode   bool
 	commandInput  textinput.Model
+	helpMode      bool
 }
 
 func newStatusModel(svc *app.Service, actor domain.Actor) statusModel {
@@ -89,6 +90,24 @@ func (m statusModel) Init() tea.Cmd {
 }
 
 func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.helpMode {
+		switch msg := msg.(type) {
+		case tea.WindowSizeMsg:
+			m.width = msg.Width
+			m.height = msg.Height
+			return m, nil
+		case tea.KeyMsg:
+			switch msg.String() {
+			case "esc", "?":
+				m.helpMode = false
+				return m, nil
+			case "q", "ctrl+c":
+				return m, tea.Quit
+			}
+		}
+		return m, nil
+	}
+
 	if m.commandMode {
 		return m.updateCommandMode(msg)
 	}
@@ -123,6 +142,9 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, loadStatusCmd(m.svc)
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "?":
+			m.helpMode = true
+			return m, nil
 		case "q", "ctrl+c":
 			return m, tea.Quit
 		case "r":
@@ -165,6 +187,11 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case tea.KeyMsg:
 		switch msg.String() {
+		case "?":
+			m.helpMode = true
+			m.commandMode = false
+			m.commandInput.Blur()
+			return m, nil
 		case "esc":
 			m.commandMode = false
 			m.commandInput.Blur()
@@ -195,6 +222,11 @@ func (m statusModel) View() string {
 	header := m.renderHeader()
 	table := m.renderTable()
 	footer := m.renderFooter()
+
+	if m.helpMode {
+		overlay := m.renderHelpOverlay(header + "\n" + table + "\n" + footer)
+		return overlay
+	}
 
 	if m.commandMode {
 		cmdBox := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Render("Command: " + m.commandInput.View())
@@ -259,7 +291,7 @@ func (m statusModel) renderTable() string {
 }
 
 func (m statusModel) renderFooter() string {
-	help := "j/k move  tab filter  space collapse parent  : (e)dit <row> | cp \"name\" | cc \"name\"  r refresh  q quit"
+	help := "? help  : command  q quit"
 	status := m.status
 	if m.errText != "" {
 		status = fmt.Sprintf("%s: %s", m.status, m.errText)
@@ -269,6 +301,40 @@ func (m statusModel) renderFooter() string {
 		style = lipgloss.NewStyle().Foreground(lipgloss.Color("196")).Bold(true)
 	}
 	return lipgloss.NewStyle().Border(lipgloss.NormalBorder(), true, false, false, false).Padding(0, 1).Render(help + "\n" + style.Render(status))
+}
+
+func (m statusModel) renderHelpOverlay(background string) string {
+	lines := []string{
+		"Command Palette",
+		"",
+		"Navigation",
+		"j/k : move cursor",
+		"tab : toggle filter (all / agent-active)",
+		"space : collapse/expand parent row",
+		"r : refresh now",
+		"q : quit",
+		"",
+		"Command Mode",
+		":(e)dit <row>   (examples: :e 1, :edit 1)",
+		":cp \"task name\"  create parent task",
+		":cc \"task name\"  create child task in selected parent context",
+		"",
+		"Close this panel with Esc or ?",
+	}
+
+	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
+	boxWidth := min(78, max(52, m.width-12))
+	box := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Foreground(lipgloss.Color("252")).
+		Background(lipgloss.Color("236")).
+		Padding(1, 2).
+		Width(boxWidth).
+		Render(strings.Join(lines, "\n"))
+
+	topPad := max(1, (m.height-18)/2)
+	leftPad := max(1, (m.width-boxWidth)/2)
+	return dimmed + "\n" + strings.Repeat("\n", topPad) + lipgloss.NewStyle().PaddingLeft(leftPad).Render(box)
 }
 
 func (m *statusModel) recomputeVisible() {
@@ -573,4 +639,11 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
 	}
+}
+
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
