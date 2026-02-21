@@ -318,7 +318,9 @@ func (m statusModel) treeLabel(row statusRow) string {
 
 func loadStatusCmd(svc *app.Service) tea.Cmd {
 	return func() tea.Msg {
-		statuses, err := svc.ListTaskStatus(context.Background(), nil)
+		ctx, cancel := context.WithTimeout(context.Background(), 1200*time.Millisecond)
+		defer cancel()
+		statuses, err := svc.ListTaskStatus(ctx, nil)
 		if err != nil {
 			return statusLoadedMsg{err: err, at: time.Now()}
 		}
