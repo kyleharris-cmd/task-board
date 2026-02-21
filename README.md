@@ -2,20 +2,33 @@
 
 Local-first task board for human + agent collaboration.
 
-## Phase 4 Scope
+## Install (Recommended)
 
-This repository now includes:
+From this repository:
 
-- Go CLI scaffold (`taskboard`)
-- SQLite storage with embedded migrations
-- Policy loader and validator for per-board governance
-- State transition validator with readiness and rubric gates
-- Audit/event writers for transitions, artifacts, and rubric results
-- CLI commands for task creation, listing, claim/renew/release, transitions, artifact writes, rubric evaluations, and ready checks
-- Interactive TUI (`taskboard tui`) with task list/detail panes and workflow key actions
-- Local HTTP API server (`taskboard serve`) for agent integrations
-- Hardening updates: stronger task ID generation and lease/release/readiness edge-case tests
-- Unit/integration tests for policy, workflow, storage, app service, and HTTP API
+```bash
+./scripts/install.sh
+```
+
+This will:
+
+- Build `taskboard`
+- Install `tb` into `~/.local/bin/tb`
+- Add `~/.local/bin` to `PATH` in `~/.zshrc` if missing
+
+Alternative:
+
+```bash
+make install
+```
+
+## Quick Start (In Any Target Repo)
+
+```bash
+cd /path/to/your/repo
+tb init
+tb status
+```
 
 ## Current Commands
 
@@ -58,21 +71,6 @@ This repository now includes:
 
 All mutating endpoints take a structured actor payload (`type`, `id`, `display_name`).
 
-## TUI Keys
-
-- `j/k` or arrows: move selection
-- `r`: refresh tasks
-- `c`: claim selected task
-- `n`: renew selected lease
-- `u`: release selected lease
-- `>`/`l`: transition to next lifecycle state
-- `<`/`h`: transition to previous lifecycle state
-- `x`: run ready-check on selected task
-- `a`: add `context` artifact (inline input)
-- `d`: add `design` artifact (inline input)
-- `b`: add `rubric_review` artifact (inline input)
-- `q`: quit
-
 ## Default Repo Layout (target repos)
 
 - `.taskboard/board.db`
@@ -86,7 +84,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 ## Workflow-First Usage
 
 1. In target repo, run `tb init`.
-2. Create parent design task: `tb parent create --title \"...\"`.
+2. Create parent design task: `tb parent create --title "..."`.
 3. Create child tasks from parent design: `tb child create --parent-id ... --title ... --files ...`.
 4. Pick up child task: `tb pickup <child-id>`.
 5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
@@ -108,21 +106,5 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 ## Development
 
 ```bash
-go test ./...
+make test
 ```
-
-## Binary Alias (`tb`)
-
-Build the binary and create a short alias symlink:
-
-```bash
-mkdir -p bin
-go build -o bin/taskboard ./cmd/taskboard
-ln -sf taskboard bin/tb
-```
-
-You can then use either:
-
-- `./bin/taskboard ...`
-- `./bin/tb ...`
-- `./tb ...` (repo-root wrapper script)
