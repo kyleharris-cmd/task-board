@@ -74,3 +74,19 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 ```bash
 go test ./...
 ```
+
+## Binary Alias (`tb`)
+
+Build the binary and create a short alias symlink:
+
+```bash
+mkdir -p bin
+go build -o bin/taskboard ./cmd/taskboard
+ln -sf taskboard bin/tb
+```
+
+You can then use either:
+
+- `./bin/taskboard ...`
+- `./bin/tb ...`
+- `./tb ...` (repo-root wrapper script)
