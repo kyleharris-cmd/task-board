@@ -69,7 +69,7 @@ type CreateTaskInput struct {
 
 func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, error) {
 	now := time.Now().UTC()
-	id := fmt.Sprintf("T-%d", now.UnixMilli())
+	id := newTaskID(now)
 	if strings.TrimSpace(in.TaskType) == "" {
 		in.TaskType = "default"
 	}
@@ -329,4 +329,8 @@ func (s *Service) ReadyCheck(ctx context.Context, taskID string, actor domain.Ac
 		PresentArtifacts:    artifacts,
 		ParentChildrenReady: childrenReady,
 	})
+}
+
+func newTaskID(now time.Time) string {
+	return fmt.Sprintf("T-%d", now.UnixNano())
 }

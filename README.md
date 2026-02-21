@@ -2,7 +2,7 @@
 
 Local-first task board for human + agent collaboration.
 
-## Phase 3 Scope
+## Phase 4 Scope
 
 This repository now includes:
 
@@ -13,7 +13,9 @@ This repository now includes:
 - Audit/event writers for transitions, artifacts, and rubric results
 - CLI commands for task creation, listing, claim/renew/release, transitions, artifact writes, rubric evaluations, and ready checks
 - Interactive TUI (`taskboard tui`) with task list/detail panes and workflow key actions
-- Unit tests for policy, workflow, storage, and service-level task lifecycle
+- Local HTTP API server (`taskboard serve`) for agent integrations
+- Hardening updates: stronger task ID generation and lease/release/readiness edge-case tests
+- Unit/integration tests for policy, workflow, storage, app service, and HTTP API
 
 ## Current Commands
 
@@ -29,6 +31,22 @@ This repository now includes:
 - `taskboard artifact add --id ... --type ... --content ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard rubric evaluate --id ... --pass --required-fields-complete --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard tui --actor-type ... --actor-id ... --actor-name ...`
+- `taskboard serve --addr 127.0.0.1:7327`
+
+## HTTP API (v1)
+
+- `GET /health`
+- `GET /tasks?state=<state>`
+- `POST /tasks`
+- `POST /tasks/{id}/claim`
+- `POST /tasks/{id}/renew`
+- `POST /tasks/{id}/release`
+- `POST /tasks/{id}/transition`
+- `POST /tasks/{id}/artifacts`
+- `POST /tasks/{id}/rubric`
+- `POST /tasks/{id}/ready-check`
+
+All mutating endpoints take a structured actor payload (`type`, `id`, `display_name`).
 
 ## TUI Keys
 

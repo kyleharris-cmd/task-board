@@ -29,6 +29,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newArtifactCmd(&repoRoot))
 	rootCmd.AddCommand(newRubricCmd(&repoRoot))
 	rootCmd.AddCommand(newTUICmd(&repoRoot))
+	rootCmd.AddCommand(newServeCmd(&repoRoot))
 
 	return rootCmd
 }
