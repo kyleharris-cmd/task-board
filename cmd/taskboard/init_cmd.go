@@ -11,16 +11,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newInitCmd() *cobra.Command {
-	var repoRoot string
-
+func newInitCmd(repoRoot *string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "init",
 		Short: "Initialize .taskboard storage and default policy in a repository",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
 
-			absRoot, err := filepath.Abs(repoRoot)
+			absRoot, err := filepath.Abs(*repoRoot)
 			if err != nil {
 				return fmt.Errorf("resolve repo root: %w", err)
 			}
@@ -55,8 +53,6 @@ func newInitCmd() *cobra.Command {
 			return nil
 		},
 	}
-
-	cmd.Flags().StringVar(&repoRoot, "repo-root", ".", "repository root to initialize")
 
 	return cmd
 }

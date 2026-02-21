@@ -15,13 +15,19 @@ func main() {
 }
 
 func newRootCmd() *cobra.Command {
+	var repoRoot string
+
 	rootCmd := &cobra.Command{
 		Use:   "taskboard",
 		Short: "Local task board with policy-driven workflow gates",
 	}
 
-	rootCmd.AddCommand(newInitCmd())
+	rootCmd.PersistentFlags().StringVar(&repoRoot, "repo-root", ".", "repository root containing .taskboard")
+	rootCmd.AddCommand(newInitCmd(&repoRoot))
 	rootCmd.AddCommand(newPolicyCmd())
+	rootCmd.AddCommand(newTaskCmd(&repoRoot))
+	rootCmd.AddCommand(newArtifactCmd(&repoRoot))
+	rootCmd.AddCommand(newRubricCmd(&repoRoot))
 
 	return rootCmd
 }

@@ -1,6 +1,10 @@
 package domain
 
-import "time"
+import (
+	"fmt"
+	"strings"
+	"time"
+)
 
 type State string
 
@@ -16,12 +20,44 @@ const (
 	StateDone                   State = "Done"
 )
 
+var AllStates = []State{
+	StateBacklog,
+	StateContextAdded,
+	StateDesignDrafted,
+	StateRubricReview,
+	StateReadyForImplementation,
+	StateInProgress,
+	StateTesting,
+	StateDocumented,
+	StateDone,
+}
+
+func ParseState(raw string) (State, error) {
+	norm := strings.TrimSpace(raw)
+	for _, s := range AllStates {
+		if strings.EqualFold(norm, string(s)) {
+			return s, nil
+		}
+	}
+	return "", fmt.Errorf("invalid state %q", raw)
+}
+
 type ActorType string
 
 const (
 	ActorTypeHuman ActorType = "human"
 	ActorTypeAgent ActorType = "agent"
 )
+
+func ParseActorType(raw string) (ActorType, error) {
+	norm := strings.ToLower(strings.TrimSpace(raw))
+	switch ActorType(norm) {
+	case ActorTypeHuman, ActorTypeAgent:
+		return ActorType(norm), nil
+	default:
+		return "", fmt.Errorf("invalid actor type %q", raw)
+	}
+}
 
 type Actor struct {
 	Type        ActorType
@@ -32,9 +68,11 @@ type Actor struct {
 type Task struct {
 	ID                string
 	Title             string
+	Description       string
 	State             State
 	ParentID          *string
 	TaskType          string
+	Priority          int
 	RubricPassed      bool
 	IsParent          bool
 	ChildrenReady     bool
@@ -61,3 +99,22 @@ const (
 	ArtifactTestReport          ArtifactType = "test_report"
 	ArtifactDocsUpdate          ArtifactType = "docs_update"
 )
+
+var AllArtifactTypes = []ArtifactType{
+	ArtifactContext,
+	ArtifactDesign,
+	ArtifactRubricReview,
+	ArtifactImplementationNotes,
+	ArtifactTestReport,
+	ArtifactDocsUpdate,
+}
+
+func ParseArtifactType(raw string) (ArtifactType, error) {
+	norm := strings.ToLower(strings.TrimSpace(raw))
+	for _, t := range AllArtifactTypes {
+		if norm == string(t) {
+			return t, nil
+		}
+	}
+	return "", fmt.Errorf("invalid artifact type %q", raw)
+}
