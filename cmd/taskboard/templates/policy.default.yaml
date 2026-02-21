@@ -1,0 +1,56 @@
+version: 1
+
+lease_required_states:
+  - "Context Added"
+  - "Design Drafted"
+  - "Rubric Review"
+  - "Ready for Implementation"
+  - "In Progress"
+  - "Testing"
+  - "Documented"
+
+transitions:
+  - from: "Backlog"
+    to: "Context Added"
+    actor_types: ["human", "agent"]
+  - from: "Context Added"
+    to: "Design Drafted"
+    actor_types: ["human", "agent"]
+  - from: "Design Drafted"
+    to: "Rubric Review"
+    actor_types: ["human", "agent"]
+  - from: "Rubric Review"
+    to: "Ready for Implementation"
+    actor_types: ["human", "agent"]
+  - from: "Ready for Implementation"
+    to: "In Progress"
+    actor_types: ["human", "agent"]
+  - from: "In Progress"
+    to: "Testing"
+    actor_types: ["human", "agent"]
+  - from: "Testing"
+    to: "Documented"
+    actor_types: ["human", "agent"]
+  - from: "Documented"
+    to: "Done"
+    actor_types: ["human", "agent"]
+
+required_artifacts_by_state:
+  "Context Added": ["context"]
+  "Design Drafted": ["context", "design"]
+  "Rubric Review": ["context", "design"]
+  "Ready for Implementation": ["context", "design", "rubric_review"]
+  "Testing": ["implementation_notes", "test_report"]
+  "Documented": ["implementation_notes", "test_report", "docs_update"]
+  "Done": ["implementation_notes", "test_report", "docs_update"]
+
+task_type_leases:
+  default:
+    default_ttl_minutes: 60
+    allow_auto_renew: true
+  design:
+    default_ttl_minutes: 90
+    allow_auto_renew: true
+  implementation:
+    default_ttl_minutes: 120
+    allow_auto_renew: true
