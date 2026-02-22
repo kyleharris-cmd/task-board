@@ -21,6 +21,7 @@ type Service struct {
 	taskDir  string
 	policy   policy.Policy
 	db       *storage.DB
+	readOnly bool
 }
 
 type ArtifactSnapshot struct {
@@ -36,7 +37,15 @@ type TaskStatus struct {
 	LeaseActive bool
 }
 
+type OpenServiceOptions struct {
+	ReadOnly bool
+}
+
 func OpenService(repoRoot string) (*Service, error) {
+	return OpenServiceWithOptions(repoRoot, OpenServiceOptions{})
+}
+
+func OpenServiceWithOptions(repoRoot string, opts OpenServiceOptions) (*Service, error) {
 	absRoot, err := filepath.Abs(repoRoot)
 	if err != nil {
 		return nil, fmt.Errorf("resolve repo root: %w", err)
@@ -54,17 +63,26 @@ func OpenService(repoRoot string) (*Service, error) {
 		return nil, err
 	}
 
-	db, err := storage.Open(dbPath)
+	openOpts := storage.OpenOptions{
+		ReadOnly:      opts.ReadOnly,
+		BusyTimeoutMS: 5000,
+	}
+	if opts.ReadOnly {
+		openOpts.BusyTimeoutMS = 300
+	}
+	db, err := storage.OpenWithOptions(dbPath, openOpts)
 	if err != nil {
 		return nil, err
 	}
-	if err := db.Migrate(context.Background()); err != nil {
-		_ = db.Close()
-		return nil, err
-	}
-	if err := db.EnsureTaskShortRefs(context.Background(), defaultBoardID); err != nil {
-		_ = db.Close()
-		return nil, err
+	if !opts.ReadOnly {
+		if err := db.Migrate(context.Background()); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
+		if err := db.EnsureTaskShortRefs(context.Background(), defaultBoardID); err != nil {
+			_ = db.Close()
+			return nil, err
+		}
 	}
 
 	return &Service{
@@ -72,6 +90,7 @@ func OpenService(repoRoot string) (*Service, error) {
 		taskDir:  taskDir,
 		policy:   p,
 		db:       db,
+		readOnly: opts.ReadOnly,
 	}, nil
 }
 
@@ -89,6 +108,9 @@ type CreateTaskInput struct {
 }
 
 func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, error) {
+	if s.readOnly {
+		return "", fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	id := newTaskID(now)
 	shortRef, err := s.db.AllocateTaskShortRef(ctx, defaultBoardID)
@@ -171,6 +193,9 @@ type ClaimTaskInput struct {
 }
 
 func (s *Service) ClaimTask(ctx context.Context, in ClaimTaskInput) (time.Time, error) {
+	if s.readOnly {
+		return time.Time{}, fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	task, err := s.resolveTaskReference(ctx, in.TaskID)
 	if err != nil {
@@ -206,6 +231,9 @@ func (s *Service) ClaimTask(ctx context.Context, in ClaimTaskInput) (time.Time, 
 }
 
 func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domain.Actor, ttlMinutes int) (time.Time, error) {
+	if s.readOnly {
+		return time.Time{}, fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	task, err := s.resolveTaskReference(ctx, taskID)
 	if err != nil {
@@ -242,6 +270,9 @@ func (s *Service) RenewTaskLease(ctx context.Context, taskID string, actor domai
 }
 
 func (s *Service) ReleaseTaskLease(ctx context.Context, taskID string, actor domain.Actor) error {
+	if s.readOnly {
+		return fmt.Errorf("service is read-only")
+	}
 	task, err := s.resolveTaskReference(ctx, taskID)
 	if err != nil {
 		return err
@@ -268,6 +299,9 @@ type TransitionInput struct {
 }
 
 func (s *Service) TransitionTask(ctx context.Context, in TransitionInput) error {
+	if s.readOnly {
+		return fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	task, err := s.resolveTaskReference(ctx, in.TaskID)
 	if err != nil {
@@ -319,6 +353,9 @@ func (s *Service) TransitionTask(ctx context.Context, in TransitionInput) error 
 }
 
 func (s *Service) AddArtifact(ctx context.Context, taskID string, artifactType domain.ArtifactType, content string, actor domain.Actor) (string, int, error) {
+	if s.readOnly {
+		return "", 0, fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	task, err := s.resolveTaskReference(ctx, taskID)
 	if err != nil {
@@ -357,6 +394,9 @@ func (s *Service) AddArtifact(ctx context.Context, taskID string, artifactType d
 }
 
 func (s *Service) EvaluateRubric(ctx context.Context, taskID, rubricVersion string, requiredFieldsComplete, pass bool, notes string, actor domain.Actor) error {
+	if s.readOnly {
+		return fmt.Errorf("service is read-only")
+	}
 	now := time.Now().UTC()
 	task, err := s.resolveTaskReference(ctx, taskID)
 	if err != nil {

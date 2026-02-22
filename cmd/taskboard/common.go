@@ -35,7 +35,11 @@ func (f actorFlags) actor() (domain.Actor, error) {
 }
 
 func withService(repoRoot string, fn func(*app.Service) error) error {
-	svc, err := app.OpenService(repoRoot)
+	return withServiceOptions(repoRoot, app.OpenServiceOptions{}, fn)
+}
+
+func withServiceOptions(repoRoot string, opts app.OpenServiceOptions, fn func(*app.Service) error) error {
+	svc, err := app.OpenServiceWithOptions(repoRoot, opts)
 	if err != nil {
 		return err
 	}

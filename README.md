@@ -120,6 +120,8 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
 - Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `?` open command palette/help, `q` quit.
+- `tb stat` is read-only by default to avoid write contention with active agent work.
+- Use `tb stat --editable` when you intentionally want status command-mode writes.
 - Command mode shortcuts:
 - `:(e)dit <row-number>`: edit the selected row's primary design artifact.
 - `:cp "task name"`: create parent task from status board.

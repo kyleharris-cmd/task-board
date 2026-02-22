@@ -19,11 +19,39 @@ type DB struct {
 	SQL *sql.DB
 }
 
+type OpenOptions struct {
+	ReadOnly      bool
+	BusyTimeoutMS int
+}
+
 func Open(path string) (*DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)", path)
+	return OpenWithOptions(path, OpenOptions{})
+}
+
+func OpenWithOptions(path string, opts OpenOptions) (*DB, error) {
+	busyTimeout := opts.BusyTimeoutMS
+	if busyTimeout <= 0 {
+		busyTimeout = 5000
+	}
+	mode := "rwc"
+	if opts.ReadOnly {
+		mode = "ro"
+	}
+	dsn := fmt.Sprintf("file:%s?mode=%s&_pragma=foreign_keys(1)&_pragma=busy_timeout(%d)", path, mode, busyTimeout)
 	sqldb, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, fmt.Errorf("open sqlite: %w", err)
+	}
+	if !opts.ReadOnly {
+		// WAL improves read/write concurrency between separate processes (e.g. agent + status monitor).
+		if _, err := sqldb.Exec(`PRAGMA journal_mode=WAL`); err != nil {
+			_ = sqldb.Close()
+			return nil, fmt.Errorf("enable WAL mode: %w", err)
+		}
+		if _, err := sqldb.Exec(`PRAGMA synchronous=NORMAL`); err != nil {
+			_ = sqldb.Close()
+			return nil, fmt.Errorf("set synchronous mode: %w", err)
+		}
 	}
 
 	return &DB{SQL: sqldb}, nil

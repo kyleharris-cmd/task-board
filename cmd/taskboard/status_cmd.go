@@ -11,6 +11,7 @@ import (
 
 func newStatusCmd(repoRoot *string) *cobra.Command {
 	var af optionalActorFlags
+	var editable bool
 
 	cmd := &cobra.Command{
 		Use:     "status",
@@ -21,8 +22,8 @@ func newStatusCmd(repoRoot *string) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return withService(*repoRoot, func(svc *app.Service) error {
-				model := newStatusModel(svc, actor)
+			return withServiceOptions(*repoRoot, app.OpenServiceOptions{ReadOnly: !editable}, func(svc *app.Service) error {
+				model := newStatusModel(svc, actor, editable)
 				program := tea.NewProgram(model, tea.WithAltScreen())
 				if _, err := program.Run(); err != nil {
 					return fmt.Errorf("run status board: %w", err)
@@ -32,6 +33,7 @@ func newStatusCmd(repoRoot *string) *cobra.Command {
 		},
 	}
 	af.add(cmd, domain.ActorTypeHuman)
+	cmd.Flags().BoolVar(&editable, "editable", false, "allow write commands (:e/:cp/:cc) in status view")
 
 	return cmd
 }

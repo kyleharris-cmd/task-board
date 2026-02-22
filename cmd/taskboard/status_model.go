@@ -53,6 +53,7 @@ type statusRow struct {
 type statusModel struct {
 	svc           *app.Service
 	actor         domain.Actor
+	editable      bool
 	rows          []statusRow
 	visible       []statusRow
 	cursor        int
@@ -68,7 +69,7 @@ type statusModel struct {
 	helpMode      bool
 }
 
-func newStatusModel(svc *app.Service, actor domain.Actor) statusModel {
+func newStatusModel(svc *app.Service, actor domain.Actor, editable bool) statusModel {
 	in := textinput.New()
 	in.Placeholder = "edit 1"
 	in.Prompt = ":"
@@ -78,6 +79,7 @@ func newStatusModel(svc *app.Service, actor domain.Actor) statusModel {
 	return statusModel{
 		svc:          svc,
 		actor:        actor,
+		editable:     editable,
 		status:       "Loading task status...",
 		filter:       filterAll,
 		collapsed:    map[string]bool{},
@@ -169,6 +171,11 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.collapsed[row.TaskID] = !m.collapsed[row.TaskID]
 			m.recomputeVisible()
 		case ":":
+			if !m.editable {
+				m.status = "Read-only mode"
+				m.errText = "status command mode is disabled (run with --editable)"
+				return m, nil
+			}
 			m.commandMode = true
 			m.commandInput.SetValue("")
 			m.commandInput.Focus()
@@ -291,7 +298,10 @@ func (m statusModel) renderTable() string {
 }
 
 func (m statusModel) renderFooter() string {
-	help := "? help  : command  q quit"
+	help := "? help  q quit"
+	if m.editable {
+		help = "? help  : command  q quit"
+	}
 	status := m.status
 	if m.errText != "" {
 		status = fmt.Sprintf("%s: %s", m.status, m.errText)
@@ -315,12 +325,20 @@ func (m statusModel) renderHelpOverlay(background string) string {
 		"q : quit",
 		"",
 		"Command Mode",
-		":(e)dit <row>   (examples: :e 1, :edit 1)",
-		":cp \"task name\"  create parent task",
-		":cc \"task name\"  create child task in selected parent context",
+	}
+	if m.editable {
+		lines = append(lines,
+			":(e)dit <row>   (examples: :e 1, :edit 1)",
+			":cp \"task name\"  create parent task",
+			":cc \"task name\"  create child task in selected parent context",
+		)
+	} else {
+		lines = append(lines, "(disabled in read-only mode; run tb stat --editable)")
+	}
+	lines = append(lines,
 		"",
 		"Close this panel with Esc or ?",
-	}
+	)
 
 	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
 	boxWidth := min(78, max(52, m.width-12))
