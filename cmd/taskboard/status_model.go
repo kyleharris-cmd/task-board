@@ -189,25 +189,8 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = msg.status
 		return m, loadStatusCmd(m.svc)
 	case tea.KeyMsg:
-		if m.keymapMode == keymapVim {
-			switch msg.String() {
-			case "g":
-				if m.pendingG {
-					m.cursor = 0
-					m.pendingG = false
-					return m, nil
-				}
-				m.pendingG = true
-				return m, nil
-			case "G":
-				if len(m.visible) > 0 {
-					m.cursor = len(m.visible) - 1
-				}
-				m.pendingG = false
-				return m, nil
-			default:
-				m.pendingG = false
-			}
+		if next, cmd, handled := m.handleStatusVimPrelude(msg); handled {
+			return next, cmd
 		}
 		switch msg.String() {
 		case "?":
@@ -279,6 +262,31 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	return m, nil
+}
+
+func (m statusModel) handleStatusVimPrelude(msg tea.KeyMsg) (tea.Model, tea.Cmd, bool) {
+	if m.keymapMode != keymapVim {
+		return m, nil, false
+	}
+	switch msg.String() {
+	case "g":
+		if m.pendingG {
+			m.cursor = 0
+			m.pendingG = false
+			return m, nil, true
+		}
+		m.pendingG = true
+		return m, nil, true
+	case "G":
+		if len(m.visible) > 0 {
+			m.cursor = len(m.visible) - 1
+		}
+		m.pendingG = false
+		return m, nil, true
+	default:
+		m.pendingG = false
+		return m, nil, false
+	}
 }
 
 func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -362,7 +370,9 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errText = ""
 				return m, nil
 			}
-			return m, runStatusCommand(m.svc, m.visible, m.cursor, m.actor, cmdText)
+			return m, func() tea.Msg {
+				return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", verb)}
+			}
 		}
 	}
 	var cmd tea.Cmd
@@ -416,37 +426,25 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		switch msg.String() {
 		case "esc":
-			if m.completion != nil {
-				m.completion = nil
-				return m, nil
+			if next, handled := m.closeCompletionIfOpen(); handled {
+				return next, nil
 			}
 			return m.saveInlineEditor()
 		case "ctrl+q":
-			m.editorMode = false
-			m.pendingEdit = nil
-			m.completion = nil
-			m.status = "Edit canceled"
-			m.errText = ""
-			return m, nil
+			return m.cancelInlineEditor()
 		case "ctrl+s":
 			return m.saveInlineEditor()
 		case "enter":
-			if m.completion != nil {
-				m.applySelectedEditorCompletion()
-				return m, nil
+			if next, handled := m.acceptCompletionIfOpen(); handled {
+				return next, nil
 			}
 		case "j", "down":
-			if m.completion != nil && len(m.completion.matches) > 0 {
-				m.completion.selected = (m.completion.selected + 1) % len(m.completion.matches)
-				return m, nil
+			if next, handled := m.moveCompletionSelection(1); handled {
+				return next, nil
 			}
 		case "k", "up":
-			if m.completion != nil && len(m.completion.matches) > 0 {
-				m.completion.selected--
-				if m.completion.selected < 0 {
-					m.completion.selected = len(m.completion.matches) - 1
-				}
-				return m, nil
+			if next, handled := m.moveCompletionSelection(-1); handled {
+				return next, nil
 			}
 		case "tab":
 			m.advanceEditorCompletion()
@@ -465,29 +463,22 @@ func (m statusModel) updateEditorModeVim(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	if m.editorInsert {
 		switch msg.String() {
 		case "esc":
-			if m.completion != nil {
-				m.completion = nil
-				return m, nil
+			if next, handled := m.closeCompletionIfOpen(); handled {
+				return next, nil
 			}
 			m.editorInsert = false
 			return m, nil
 		case "ctrl+s":
 			return m.saveInlineEditor()
 		case "ctrl+q":
-			m.editorMode = false
-			m.pendingEdit = nil
-			m.completion = nil
 			m.editorInsert = false
-			m.status = "Edit canceled"
-			m.errText = ""
-			return m, nil
+			return m.cancelInlineEditor()
 		case "tab":
 			m.advanceEditorCompletion()
 			return m, nil
 		case "enter":
-			if m.completion != nil {
-				m.applySelectedEditorCompletion()
-				return m, nil
+			if next, handled := m.acceptCompletionIfOpen(); handled {
+				return next, nil
 			}
 		}
 		var cmd tea.Cmd
@@ -506,19 +497,14 @@ func (m statusModel) updateEditorModeVim(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.editorInsert = true
 		return m, nil
 	case "j", "down":
-		if m.completion != nil && len(m.completion.matches) > 0 {
-			m.completion.selected = (m.completion.selected + 1) % len(m.completion.matches)
-			return m, nil
+		if next, handled := m.moveCompletionSelection(1); handled {
+			return next, nil
 		}
 		m.editorInput.CursorDown()
 		return m, nil
 	case "k", "up":
-		if m.completion != nil && len(m.completion.matches) > 0 {
-			m.completion.selected--
-			if m.completion.selected < 0 {
-				m.completion.selected = len(m.completion.matches) - 1
-			}
-			return m, nil
+		if next, handled := m.moveCompletionSelection(-1); handled {
+			return next, nil
 		}
 		m.editorInput.CursorUp()
 		return m, nil
@@ -532,25 +518,56 @@ func (m statusModel) updateEditorModeVim(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.advanceEditorCompletion()
 		return m, nil
 	case "enter":
-		if m.completion != nil {
-			m.applySelectedEditorCompletion()
-			return m, nil
+		if next, handled := m.acceptCompletionIfOpen(); handled {
+			return next, nil
 		}
 		return m.saveInlineEditor()
 	case "esc":
-		if m.completion != nil {
-			m.completion = nil
+		if next, handled := m.closeCompletionIfOpen(); handled {
+			return next, nil
 		}
 		return m, nil
 	case "q", "ctrl+q":
-		m.editorMode = false
-		m.pendingEdit = nil
-		m.completion = nil
-		m.status = "Edit canceled"
-		m.errText = ""
-		return m, nil
+		return m.cancelInlineEditor()
 	}
 	return m, nil
+}
+
+func (m statusModel) cancelInlineEditor() (tea.Model, tea.Cmd) {
+	m.editorMode = false
+	m.pendingEdit = nil
+	m.completion = nil
+	m.status = "Edit canceled"
+	m.errText = ""
+	return m, nil
+}
+
+func (m statusModel) closeCompletionIfOpen() (statusModel, bool) {
+	if m.completion == nil {
+		return m, false
+	}
+	m.completion = nil
+	return m, true
+}
+
+func (m statusModel) acceptCompletionIfOpen() (statusModel, bool) {
+	if m.completion == nil {
+		return m, false
+	}
+	m.applySelectedEditorCompletion()
+	return m, true
+}
+
+func (m statusModel) moveCompletionSelection(delta int) (statusModel, bool) {
+	if m.completion == nil || len(m.completion.matches) == 0 {
+		return m, false
+	}
+	n := len(m.completion.matches)
+	m.completion.selected = (m.completion.selected + delta) % n
+	if m.completion.selected < 0 {
+		m.completion.selected += n
+	}
+	return m, true
 }
 
 func (m *statusModel) saveInlineEditor() (tea.Model, tea.Cmd) {
@@ -1158,122 +1175,6 @@ func leaseText(row statusRow) string {
 	return "expired"
 }
 
-func runStatusCommand(svc *app.Service, visible []statusRow, cursor int, actor domain.Actor, cmdText string) tea.Cmd {
-	return func() tea.Msg {
-		verb, arg, err := parseStatusCommand(cmdText)
-		if err != nil {
-			return statusOpMsg{status: "Invalid command", err: err}
-		}
-
-		switch verb {
-		case "edit", "e":
-			idx, convErr := strconv.Atoi(arg)
-			if convErr != nil || idx < 1 || idx > len(visible) {
-				return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
-			}
-			row := visible[idx-1]
-			artifactType := domain.ArtifactDesign
-			if row.ParentID == nil && row.HasChildren {
-				artifactType = domain.ArtifactParentDesign
-			} else if row.ParentID != nil {
-				artifactType = domain.ArtifactChildDesign
-			}
-
-			initial := ""
-			if snap, ok, lookupErr := svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); lookupErr == nil && ok {
-				initial = snap.ContentSnapshot
-			} else if lookupErr != nil {
-				return statusOpMsg{status: "Edit failed", err: lookupErr}
-			}
-			if strings.TrimSpace(initial) == "" {
-				initial = fmt.Sprintf("# %s\n\n", artifactType)
-			}
-
-			content, editErr := editContentWithEditor(initial)
-			if editErr != nil {
-				return statusOpMsg{status: "Edit failed", err: editErr}
-			}
-			if strings.TrimSpace(content) == "" {
-				return statusOpMsg{status: "Edit canceled", err: fmt.Errorf("content was empty")}
-			}
-			if _, _, addErr := svc.AddArtifact(context.Background(), row.TaskID, artifactType, content, actor); addErr != nil {
-				return statusOpMsg{status: "Edit failed", err: addErr}
-			}
-			ref := row.ShortRef
-			if ref == "" {
-				ref = row.TaskID
-			}
-			return statusOpMsg{status: fmt.Sprintf("updated %s for %s", artifactType, ref)}
-		case "cp":
-			parentID, createErr := svc.CreateTask(context.Background(), app.CreateTaskInput{
-				Title:       arg,
-				Description: "Created from status board command mode",
-				TaskType:    "design",
-				Priority:    2,
-			})
-			if createErr != nil {
-				return statusOpMsg{status: "Create parent failed", err: createErr}
-			}
-			parentDesign := fmt.Sprintf("# Parent Design: %s\n\n## Goal\n- \n\n## Scope\n- \n\n## Components\n- \n", arg)
-			if _, _, addErr := svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, parentDesign, actor); addErr != nil {
-				return statusOpMsg{status: "Create parent failed", err: addErr}
-			}
-			task, lookupErr := svc.GetTask(context.Background(), parentID)
-			if lookupErr != nil {
-				return statusOpMsg{status: "Create parent failed", err: lookupErr}
-			}
-			ref := task.ShortRef
-			if ref == "" {
-				ref = task.ID
-			}
-			return statusOpMsg{status: fmt.Sprintf("created parent %s (%s)", ref, arg)}
-		case "cc":
-			if len(visible) == 0 {
-				return statusOpMsg{status: "Create child failed", err: errors.New("no rows visible")}
-			}
-			if cursor < 0 || cursor >= len(visible) {
-				cursor = 0
-			}
-			base := visible[cursor]
-			parentID := base.TaskID
-			if base.ParentID != nil {
-				parentID = *base.ParentID
-			}
-
-			childID, createErr := svc.CreateTask(context.Background(), app.CreateTaskInput{
-				Title:             arg,
-				Description:       "Created from status board command mode",
-				TaskType:          "implementation",
-				Priority:          3,
-				ParentID:          &parentID,
-				RequiredForParent: true,
-			})
-			if createErr != nil {
-				return statusOpMsg{status: "Create child failed", err: createErr}
-			}
-			childDesign := fmt.Sprintf("# Child Design: %s\n\n## Objective\n- \n\n## Plan\n- \n", arg)
-			if _, _, addErr := svc.AddArtifact(context.Background(), childID, domain.ArtifactChildDesign, childDesign, actor); addErr != nil {
-				return statusOpMsg{status: "Create child failed", err: addErr}
-			}
-			childContext := fmt.Sprintf("# Context\n\nParent Task: %s\n\nFiles to read first:\n- (add files)\n", parentID)
-			if _, _, addErr := svc.AddArtifact(context.Background(), childID, domain.ArtifactContext, childContext, actor); addErr != nil {
-				return statusOpMsg{status: "Create child failed", err: addErr}
-			}
-			task, lookupErr := svc.GetTask(context.Background(), childID)
-			if lookupErr != nil {
-				return statusOpMsg{status: "Create child failed", err: lookupErr}
-			}
-			ref := task.ShortRef
-			if ref == "" {
-				ref = task.ID
-			}
-			return statusOpMsg{status: fmt.Sprintf("created child %s (%s)", ref, arg)}
-		default:
-			return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", verb)}
-		}
-	}
-}
-
 func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 	cmdText = strings.TrimSpace(cmdText)
 	if cmdText == "" {
@@ -1410,37 +1311,6 @@ func listPathSuggestions(query string, files []string) []string {
 	sort.Strings(dirs)
 	sort.Strings(regular)
 	return append(dirs, regular...)
-}
-
-func bestPathCompletion(prefix string, candidates []string) (string, bool) {
-	matches := make([]string, 0, 8)
-	for _, c := range candidates {
-		if strings.HasPrefix(c, prefix) {
-			matches = append(matches, c)
-			if len(matches) > 100 {
-				break
-			}
-		}
-	}
-	if len(matches) == 0 {
-		return "", false
-	}
-	if len(matches) == 1 {
-		return matches[0], true
-	}
-	common := matches[0]
-	for _, m := range matches[1:] {
-		for !strings.HasPrefix(m, common) {
-			if len(common) == 0 {
-				return "", false
-			}
-			common = common[:len(common)-1]
-		}
-	}
-	if len(common) <= len(prefix) {
-		return "", false
-	}
-	return common, true
 }
 
 func isPathTokenRune(r rune) bool {

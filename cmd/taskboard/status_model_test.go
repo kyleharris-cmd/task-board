@@ -95,30 +95,6 @@ func TestParseTitleAndBody(t *testing.T) {
 	}
 }
 
-func TestBestPathCompletion(t *testing.T) {
-	t.Parallel()
-
-	candidates := []string{
-		"cmd/taskboard/status_model.go",
-		"cmd/taskboard/status_model_test.go",
-		"README.md",
-	}
-
-	got, ok := bestPathCompletion("README", candidates)
-	if !ok || got != "README.md" {
-		t.Fatalf("bestPathCompletion exact expected README.md, got (%q, %v)", got, ok)
-	}
-
-	got, ok = bestPathCompletion("cmd/taskboard/status_", candidates)
-	if !ok || got != "cmd/taskboard/status_model" {
-		t.Fatalf("bestPathCompletion common-prefix expected cmd/taskboard/status_model, got (%q, %v)", got, ok)
-	}
-
-	if got, ok = bestPathCompletion("nope", candidates); ok || got != "" {
-		t.Fatalf("bestPathCompletion expected no match, got (%q, %v)", got, ok)
-	}
-}
-
 func TestListPathSuggestions(t *testing.T) {
 	t.Parallel()
 
