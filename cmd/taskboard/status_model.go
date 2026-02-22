@@ -370,6 +370,37 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.errText = ""
 				return m, nil
 			}
+			if verb == "s" || verb == "state" || verb == "to" {
+				row, ok := m.selected()
+				if !ok {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "State change failed", err: errors.New("no rows visible")}
+					}
+				}
+				toState, stateErr := parseStateCommandArg(arg)
+				if stateErr != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "State change failed", err: stateErr}
+					}
+				}
+				if err := m.svc.TransitionTask(context.Background(), app.TransitionInput{
+					TaskID:  row.TaskID,
+					ToState: toState,
+					Actor:   m.actor,
+					Reason:  "status board command mode",
+				}); err != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "State change failed", err: err}
+					}
+				}
+				ref := row.ShortRef
+				if ref == "" {
+					ref = row.TaskID
+				}
+				return m, func() tea.Msg {
+					return statusOpMsg{status: fmt.Sprintf("moved %s to %s", ref, toState)}
+				}
+			}
 			return m, func() tea.Msg {
 				return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", verb)}
 			}
@@ -900,6 +931,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
 			":cp [optional title]  create parent from editor (line 1: Title: ..., rest=content)",
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
+			":s|:state|:to <state>  transition highlighted task state",
 			"",
 			"Inline Editor",
 			"tab : open/cycle path suggestions",
@@ -1219,6 +1251,12 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 			title = title[1 : len(title)-1]
 		}
 		return verb, strings.TrimSpace(title), nil
+	case "s", "state", "to":
+		if len(parts) < 2 {
+			return "", "", fmt.Errorf("expected format: :%s <state>", verb)
+		}
+		stateArg := strings.TrimSpace(cmdText[len(parts[0]):])
+		return verb, stateArg, nil
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
 	}
@@ -1348,6 +1386,32 @@ func parseTitleAndBody(content string) (string, string, error) {
 		body = strings.TrimSpace(strings.Join(lines[1:], "\n"))
 	}
 	return title, body, nil
+}
+
+func parseStateCommandArg(raw string) (domain.State, error) {
+	s := strings.ToLower(strings.TrimSpace(raw))
+	switch s {
+	case "backlog":
+		return domain.StateBacklog, nil
+	case "context", "context-added", "context_added":
+		return domain.StateContextAdded, nil
+	case "design", "design-drafted", "design_drafted":
+		return domain.StateDesignDrafted, nil
+	case "rubric", "rubric-review", "rubric_review":
+		return domain.StateRubricReview, nil
+	case "ready", "ready-for-implementation", "ready_for_implementation", "rfi":
+		return domain.StateReadyForImplementation, nil
+	case "progress", "in-progress", "in_progress", "doing":
+		return domain.StateInProgress, nil
+	case "testing", "test":
+		return domain.StateTesting, nil
+	case "documented", "docs":
+		return domain.StateDocumented, nil
+	case "done":
+		return domain.StateDone, nil
+	default:
+		return domain.ParseState(raw)
+	}
 }
 
 func resolveKeymapMode(raw string) string {

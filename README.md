@@ -133,6 +133,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - `:(e)dit <row-number>`: edit the selected row's primary design artifact (`:e1` and `:edit1` are supported).
 - `:cp [optional title]`: create parent task from editor (`Title:` helper on line 1; prefix stripped automatically).
 - `:cc [optional title]`: create child task from editor under current row context (line 1 template is `Title: ...`; prefix is stripped automatically).
+- `:s|:state|:to <state>`: transition highlighted task state (supports shorthands like `done`, `ready`, `rfi`, `in-progress`).
 - In the inline editor: `tab` opens/cycles directory-level path suggestions, `j/k` moves selection, `enter` inserts selected suggestion (directories keep drilling down), `esc` or `ctrl+s` saves/closes, `ctrl+q` cancels.
 - Optional vim keymap mode: run with `TB_KEYMAP=vim tb stat`.
   - Status view: `gg`/`G` jump top/bottom, `h`/`l` collapse/expand parent.

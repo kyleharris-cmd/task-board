@@ -66,6 +66,14 @@ func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 	if verb != "cc" || arg != "child title" {
 		t.Fatalf("parseStatusCommand(cc child title) = (%q, %q), want (cc, child title)", verb, arg)
 	}
+
+	verb, arg, err = parseStatusCommand(`s done`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(s done) unexpected error: %v", err)
+	}
+	if verb != "s" || arg != "done" {
+		t.Fatalf("parseStatusCommand(s done) = (%q, %q), want (s, done)", verb, arg)
+	}
 }
 
 func TestParseTitleAndBody(t *testing.T) {
@@ -142,5 +150,30 @@ func TestResolveKeymapMode(t *testing.T) {
 	}
 	if got := resolveKeymapMode("unknown"); got != keymapDefault {
 		t.Fatalf("resolveKeymapMode(unknown)=%q want %q", got, keymapDefault)
+	}
+}
+
+func TestParseStateCommandArg(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		in   string
+		want string
+	}{
+		{in: "done", want: "Done"},
+		{in: "ready", want: "Ready for Implementation"},
+		{in: "rfi", want: "Ready for Implementation"},
+		{in: "in-progress", want: "In Progress"},
+		{in: "context", want: "Context Added"},
+	}
+
+	for _, tc := range cases {
+		got, err := parseStateCommandArg(tc.in)
+		if err != nil {
+			t.Fatalf("parseStateCommandArg(%q) error: %v", tc.in, err)
+		}
+		if string(got) != tc.want {
+			t.Fatalf("parseStateCommandArg(%q) = %q, want %q", tc.in, got, tc.want)
+		}
 	}
 }
