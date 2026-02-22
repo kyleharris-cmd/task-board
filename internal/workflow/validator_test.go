@@ -77,10 +77,34 @@ func testPolicy() policy.Policy {
 		Transitions: []policy.TransitionRule{
 			{From: domain.StateRubricReview, To: domain.StateReadyForImplementation, ActorTypes: []domain.ActorType{domain.ActorTypeHuman, domain.ActorTypeAgent}},
 		},
-		LeaseRequiredStates: []domain.State{domain.StateReadyForImplementation},
+		LeaseRequiredByActor: map[domain.ActorType][]domain.State{
+			domain.ActorTypeAgent: {domain.StateReadyForImplementation},
+			domain.ActorTypeHuman: {},
+		},
 		RequiredArtifactsByState: map[domain.State][]domain.ArtifactType{
 			domain.StateReadyForImplementation: {domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 		},
 		TaskTypeLeases: map[string]policy.LeaseRule{"default": {DefaultTTLMinutes: 60, AllowAutoRenew: true}},
 	}
+}
+
+func TestValidateTransition_HumanNoLeaseWhenActorPolicyAllows(t *testing.T) {
+	t.Parallel()
+
+	p := testPolicy()
+	in := TransitionInput{
+		Task: domain.Task{
+			State:        domain.StateRubricReview,
+			RubricPassed: true,
+			IsParent:     false,
+		},
+		Actor:               domain.Actor{Type: domain.ActorTypeHuman},
+		ToState:             domain.StateReadyForImplementation,
+		HasValidLease:       false,
+		PresentArtifacts:    []domain.ArtifactType{domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
+		ParentChildrenReady: true,
+	}
+
+	err := ValidateTransition(p, in)
+	require.NoError(t, err)
 }

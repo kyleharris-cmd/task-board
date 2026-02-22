@@ -22,7 +22,7 @@ func ValidateTransition(p policy.Policy, in TransitionInput) error {
 		return fmt.Errorf("transition %q -> %q not allowed for actor type %q", in.Task.State, in.ToState, in.Actor.Type)
 	}
 
-	if p.RequiresLeaseForState(in.ToState) && !in.HasValidLease {
+	if p.RequiresLeaseForStateAndActor(in.Actor.Type, in.ToState) && !in.HasValidLease {
 		return fmt.Errorf("state %q requires a valid task lease", in.ToState)
 	}
 

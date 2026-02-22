@@ -10,6 +10,7 @@ import (
 type Policy struct {
 	Version                  int                                    `yaml:"version"`
 	LeaseRequiredStates      []domain.State                         `yaml:"lease_required_states"`
+	LeaseRequiredByActor     map[domain.ActorType][]domain.State    `yaml:"lease_required_by_actor"`
 	Transitions              []TransitionRule                       `yaml:"transitions"`
 	RequiredArtifactsByState map[domain.State][]domain.ArtifactType `yaml:"required_artifacts_by_state"`
 	TaskTypeLeases           map[string]LeaseRule                   `yaml:"task_type_leases"`
@@ -46,6 +47,11 @@ func (p Policy) Validate() error {
 			return fmt.Errorf("task_type_leases.%s.default_ttl_minutes must be > 0", taskType)
 		}
 	}
+	for actorType := range p.LeaseRequiredByActor {
+		if _, err := domain.ParseActorType(string(actorType)); err != nil {
+			return fmt.Errorf("lease_required_by_actor has invalid actor type key %q", actorType)
+		}
+	}
 
 	return nil
 }
@@ -73,6 +79,22 @@ func (p Policy) RequiresLeaseForState(state domain.State) bool {
 	}
 
 	return false
+}
+
+func (p Policy) RequiresLeaseForStateAndActor(actorType domain.ActorType, state domain.State) bool {
+	if len(p.LeaseRequiredByActor) > 0 {
+		states, ok := p.LeaseRequiredByActor[actorType]
+		if !ok {
+			return false
+		}
+		for _, s := range states {
+			if s == state {
+				return true
+			}
+		}
+		return false
+	}
+	return p.RequiresLeaseForState(state)
 }
 
 func (p Policy) RequiredArtifacts(state domain.State) []domain.ArtifactType {

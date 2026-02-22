@@ -9,6 +9,17 @@ lease_required_states:
   - "Testing"
   - "Documented"
 
+lease_required_by_actor:
+  agent:
+    - "Context Added"
+    - "Design Drafted"
+    - "Rubric Review"
+    - "Ready for Implementation"
+    - "In Progress"
+    - "Testing"
+    - "Documented"
+  human: []
+
 transitions:
   - from: "Backlog"
     to: "Context Added"

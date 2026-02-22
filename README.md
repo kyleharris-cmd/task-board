@@ -145,6 +145,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Human workflow commands default to git identity (`user.name`, `user.email`).
 - If missing, `tb` prompts to set git identity and asks repo-local vs global scope.
 - Agent calls must explicitly declare actor identity (`--actor-type agent --actor-id ... --actor-name ...`).
+- Lease gating is policy-driven and can be actor-specific via `lease_required_by_actor` in `.taskboard/policy.yaml`.
 
 ## Development
 
