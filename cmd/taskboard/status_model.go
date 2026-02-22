@@ -55,6 +55,12 @@ type pendingEditSession struct {
 	parentID     string
 }
 
+type editorCompletion struct {
+	prefix   string
+	matches  []string
+	selected int
+}
+
 type statusRow struct {
 	TaskID      string
 	ShortRef    string
@@ -89,6 +95,7 @@ type statusModel struct {
 	helpMode      bool
 	editorMode    bool
 	editorInput   textarea.Model
+	completion    *editorCompletion
 	pendingEdit   *pendingEditSession
 	repoFiles     []string
 }
@@ -358,22 +365,35 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
+			if m.completion != nil {
+				m.completion = nil
+				return m, nil
+			}
 			return m.saveInlineEditor()
 		case "ctrl+q":
 			m.editorMode = false
 			m.pendingEdit = nil
+			m.completion = nil
 			m.status = "Edit canceled"
 			m.errText = ""
 			return m, nil
 		case "ctrl+s":
 			return m.saveInlineEditor()
+		case "enter":
+			if m.completion != nil {
+				m.applySelectedEditorCompletion()
+				return m, nil
+			}
 		case "tab":
-			m.applyEditorPathCompletion()
+			m.advanceEditorCompletion()
 			return m, nil
 		}
 	}
 	var cmd tea.Cmd
 	m.editorInput, cmd = m.editorInput.Update(msg)
+	if m.completion != nil {
+		m.refreshEditorCompletion(false)
+	}
 	return m, cmd
 }
 
@@ -489,23 +509,82 @@ func (m *statusModel) saveInlineEditor() (tea.Model, tea.Cmd) {
 	}
 }
 
-func (m *statusModel) applyEditorPathCompletion() {
+func (m *statusModel) advanceEditorCompletion() {
+	if m.completion == nil {
+		if !m.refreshEditorCompletion(true) {
+			m.status = "No matching paths"
+			return
+		}
+		m.status = fmt.Sprintf("Path suggestions: %d", len(m.completion.matches))
+		return
+	}
+	if len(m.completion.matches) == 0 {
+		m.completion = nil
+		return
+	}
+	m.completion.selected = (m.completion.selected + 1) % len(m.completion.matches)
+}
+
+func (m *statusModel) applySelectedEditorCompletion() {
+	if m.completion == nil || len(m.completion.matches) == 0 {
+		return
+	}
+	selected := m.completion.matches[m.completion.selected]
+	prefix := m.completion.prefix
+	if !strings.HasPrefix(selected, prefix) {
+		m.completion = nil
+		return
+	}
+	suffix := selected[len(prefix):]
+	if suffix != "" {
+		m.editorInput.InsertString(suffix)
+	}
+	m.completion = nil
+}
+
+func (m *statusModel) refreshEditorCompletion(forceShow bool) bool {
 	if len(m.repoFiles) == 0 {
 		m.repoFiles = collectRepoFiles(m.svc.RepoRoot())
 	}
-	prefix := m.editorCurrentTokenPrefix()
-	if prefix == "" {
-		return
+	token := m.editorCurrentTokenPrefix()
+	typed := strings.TrimLeft(token, "\"'")
+	slashMode := strings.HasPrefix(typed, "/")
+	query := strings.TrimPrefix(typed, "/")
+	if query == "" && !forceShow {
+		m.completion = nil
+		return false
 	}
-	rawPrefix := strings.TrimLeft(prefix, "\"'")
-	if rawPrefix == "" {
-		return
+
+	matches := make([]string, 0, 20)
+	for _, f := range m.repoFiles {
+		if strings.HasPrefix(f, query) {
+			if slashMode {
+				matches = append(matches, "/"+f)
+			} else {
+				matches = append(matches, f)
+			}
+			if len(matches) >= 20 {
+				break
+			}
+		}
 	}
-	match, ok := bestPathCompletion(rawPrefix, m.repoFiles)
-	if !ok || len(match) <= len(rawPrefix) {
-		return
+	if len(matches) == 0 {
+		m.completion = nil
+		return false
 	}
-	m.editorInput.InsertString(match[len(rawPrefix):])
+
+	sel := 0
+	if m.completion != nil && m.completion.prefix == typed {
+		if m.completion.selected >= 0 && m.completion.selected < len(matches) {
+			sel = m.completion.selected
+		}
+	}
+	m.completion = &editorCompletion{
+		prefix:   typed,
+		matches:  matches,
+		selected: sel,
+	}
+	return true
 }
 
 func (m statusModel) editorCurrentTokenPrefix() string {
@@ -653,7 +732,8 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
 			"",
 			"Inline Editor",
-			"tab : complete file path token",
+			"tab : open/cycle path suggestions",
+			"enter : accept selected suggestion",
 			"ctrl+s or esc : save",
 			"ctrl+q : cancel",
 		)
@@ -691,11 +771,16 @@ func (m *statusModel) openInlineEditor(initial string) {
 	ta.SetHeight(max(10, m.height-12))
 	m.editorInput = ta
 	m.editorMode = true
+	m.completion = nil
 }
 
 func (m statusModel) renderEditorOverlay(background string) string {
 	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
-	title := "Inline Editor  |  tab complete path  |  esc/ctrl+s save  |  ctrl+q cancel"
+	title := "Inline Editor  |  tab suggestions  |  enter accept  |  esc/ctrl+s save"
+	content := m.editorInput.View()
+	if m.completion != nil && len(m.completion.matches) > 0 {
+		content += "\n\n" + m.renderCompletionList()
+	}
 	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Foreground(lipgloss.Color("252")).
@@ -703,8 +788,27 @@ func (m statusModel) renderEditorOverlay(background string) string {
 		Padding(1, 1).
 		Width(max(60, m.width-10)).
 		Height(max(14, m.height-8)).
-		Render(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n" + m.editorInput.View())
+		Render(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n" + content)
 	return dimmed + "\n" + lipgloss.NewStyle().PaddingLeft(3).PaddingTop(1).Render(panel)
+}
+
+func (m statusModel) renderCompletionList() string {
+	if m.completion == nil || len(m.completion.matches) == 0 {
+		return ""
+	}
+	lines := []string{"Path Suggestions (Tab=cycle, Enter=insert, Esc=close list)"}
+	for i, match := range m.completion.matches {
+		prefix := "  "
+		if i == m.completion.selected {
+			prefix = "> "
+		}
+		line := prefix + truncate(match, max(20, m.width-28))
+		if i == m.completion.selected {
+			line = lipgloss.NewStyle().Foreground(lipgloss.Color("86")).Bold(true).Render(line)
+		}
+		lines = append(lines, line)
+	}
+	return lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).Padding(0, 1).Render(strings.Join(lines, "\n"))
 }
 
 func (m *statusModel) recomputeVisible() {
