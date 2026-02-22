@@ -358,6 +358,8 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "esc":
+			return m.saveInlineEditor()
+		case "ctrl+q":
 			m.editorMode = false
 			m.pendingEdit = nil
 			m.status = "Edit canceled"
@@ -652,8 +654,8 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			"",
 			"Inline Editor",
 			"tab : complete file path token",
-			"ctrl+s : save",
-			"esc : cancel",
+			"ctrl+s or esc : save",
+			"ctrl+q : cancel",
 		)
 	} else {
 		lines = append(lines, "(disabled in read-only mode; run tb stat without --read-only)")
@@ -693,7 +695,7 @@ func (m *statusModel) openInlineEditor(initial string) {
 
 func (m statusModel) renderEditorOverlay(background string) string {
 	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
-	title := "Inline Editor  |  tab complete path  |  ctrl+s save  |  esc cancel"
+	title := "Inline Editor  |  tab complete path  |  esc/ctrl+s save  |  ctrl+q cancel"
 	panel := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Foreground(lipgloss.Color("252")).
