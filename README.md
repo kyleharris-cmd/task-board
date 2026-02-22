@@ -120,15 +120,15 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Commands accept either short refs or full internal IDs.
 - `tb task list` shows both short ref and internal ID.
 
-## Status Board (Read-First)
+## Status Board
 
 - Run `tb status` (or `tb stat`) to open a git-log style modal board.
 - Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
 - Keys: `j/k` move, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `?` open command palette/help, `q` quit.
-- `tb stat` is read-only by default to avoid write contention with active agent work.
-- Use `tb stat --editable` when you intentionally want status command-mode writes.
+- `tb stat` is editable by default for human workflow.
+- Use `tb stat --read-only` when you only want monitoring with no in-panel writes.
 - Command mode shortcuts:
 - `:(e)dit <row-number>`: edit the selected row's primary design artifact.
 - `:cp "task name"`: create parent task from status board.

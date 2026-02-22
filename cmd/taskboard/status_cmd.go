@@ -11,19 +11,19 @@ import (
 
 func newStatusCmd(repoRoot *string) *cobra.Command {
 	var af optionalActorFlags
-	var editable bool
+	var readOnly bool
 
 	cmd := &cobra.Command{
 		Use:     "status",
 		Aliases: []string{"stat"},
-		Short:   "Open read-only status board (git-log style)",
+		Short:   "Open status board (git-log style)",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actor, err := af.resolve(*repoRoot)
 			if err != nil {
 				return err
 			}
-			return withServiceOptions(*repoRoot, app.OpenServiceOptions{ReadOnly: !editable}, func(svc *app.Service) error {
-				model := newStatusModel(svc, actor, editable)
+			return withServiceOptions(*repoRoot, app.OpenServiceOptions{ReadOnly: readOnly}, func(svc *app.Service) error {
+				model := newStatusModel(svc, actor, !readOnly)
 				program := tea.NewProgram(model, tea.WithAltScreen())
 				if _, err := program.Run(); err != nil {
 					return fmt.Errorf("run status board: %w", err)
@@ -33,7 +33,7 @@ func newStatusCmd(repoRoot *string) *cobra.Command {
 		},
 	}
 	af.add(cmd, domain.ActorTypeHuman)
-	cmd.Flags().BoolVar(&editable, "editable", false, "allow write commands (:e/:cp/:cc) in status view")
+	cmd.Flags().BoolVar(&readOnly, "read-only", false, "disable write commands in status view")
 
 	return cmd
 }

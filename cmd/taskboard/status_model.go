@@ -174,7 +174,7 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case ":":
 			if !m.editable {
 				m.status = "Read-only mode"
-				m.errText = "status command mode is disabled (run with --editable)"
+				m.errText = "status command mode is disabled (run without --read-only)"
 				return m, nil
 			}
 			m.commandMode = true
@@ -335,7 +335,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":cc \"task name\"  create child task in selected parent context",
 		)
 	} else {
-		lines = append(lines, "(disabled in read-only mode; run tb stat --editable)")
+		lines = append(lines, "(disabled in read-only mode; run tb stat without --read-only)")
 	}
 	lines = append(lines,
 		"",
