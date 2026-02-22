@@ -199,6 +199,17 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.collapsed[row.TaskID] = !m.collapsed[row.TaskID]
 			m.recomputeVisible()
+		case "enter":
+			if !m.editable {
+				m.status = "Read-only mode"
+				m.errText = "opening editor is disabled (run without --read-only)"
+				return m, nil
+			}
+			row, ok := m.selected()
+			if !ok {
+				return m, nil
+			}
+			return m.beginEditForRow(row)
 		case ":":
 			if !m.editable {
 				m.status = "Read-only mode"
@@ -252,36 +263,7 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
 					}
 				}
-				row := m.visible[idx-1]
-				artifactType := domain.ArtifactDesign
-				if row.ParentID == nil && row.HasChildren {
-					artifactType = domain.ArtifactParentDesign
-				} else if row.ParentID != nil {
-					artifactType = domain.ArtifactChildDesign
-				}
-
-				initial := ""
-				if snap, ok, lookupErr := m.svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); lookupErr == nil && ok {
-					initial = snap.ContentSnapshot
-				} else if lookupErr != nil {
-					return m, func() tea.Msg {
-						return statusOpMsg{status: "Edit failed", err: lookupErr}
-					}
-				}
-				if strings.TrimSpace(initial) == "" {
-					initial = fmt.Sprintf("# %s\n\n", artifactType)
-				}
-
-				m.pendingEdit = &pendingEditSession{
-					mode:         pendingEditorModeEdit,
-					taskID:       row.TaskID,
-					shortRef:     row.ShortRef,
-					artifactType: artifactType,
-				}
-				m.openInlineEditor(initial)
-				m.status = "Editing..."
-				m.errText = ""
-				return m, nil
+				return m.beginEditForRow(m.visible[idx-1])
 			}
 			if verb == "cc" {
 				if len(m.visible) == 0 {
@@ -331,6 +313,38 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.commandInput, cmd = m.commandInput.Update(msg)
 	return m, cmd
+}
+
+func (m statusModel) beginEditForRow(row statusRow) (tea.Model, tea.Cmd) {
+	artifactType := domain.ArtifactDesign
+	if row.ParentID == nil && row.HasChildren {
+		artifactType = domain.ArtifactParentDesign
+	} else if row.ParentID != nil {
+		artifactType = domain.ArtifactChildDesign
+	}
+
+	initial := ""
+	if snap, ok, lookupErr := m.svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); lookupErr == nil && ok {
+		initial = snap.ContentSnapshot
+	} else if lookupErr != nil {
+		return m, func() tea.Msg {
+			return statusOpMsg{status: "Edit failed", err: lookupErr}
+		}
+	}
+	if strings.TrimSpace(initial) == "" {
+		initial = fmt.Sprintf("# %s\n\n", artifactType)
+	}
+
+	m.pendingEdit = &pendingEditSession{
+		mode:         pendingEditorModeEdit,
+		taskID:       row.TaskID,
+		shortRef:     row.ShortRef,
+		artifactType: artifactType,
+	}
+	m.openInlineEditor(initial)
+	m.status = "Editing..."
+	m.errText = ""
+	return m, nil
 }
 
 func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -624,6 +638,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 		"j/k : move cursor",
 		"tab : toggle filter (all / agent-active)",
 		"space : collapse/expand parent row",
+		"enter : open highlighted task",
 		"r : refresh now",
 		"q : quit",
 		"",
