@@ -20,7 +20,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd := &cobra.Command{
 		Use:     "tb",
 		Aliases: []string{"taskboard"},
-		Short: "Local task board with policy-driven workflow gates",
+		Short:   "Local task board with policy-driven workflow gates",
 	}
 
 	rootCmd.PersistentFlags().StringVar(&repoRoot, "repo-root", ".", "repository root containing .taskboard")
@@ -40,6 +40,7 @@ func newRootCmd() *cobra.Command {
 	rootCmd.AddCommand(newChildCmd(&repoRoot))
 	rootCmd.AddCommand(newPickupCmd(&repoRoot))
 	rootCmd.AddCommand(newStatusCmd(&repoRoot))
+	rootCmd.AddCommand(newCodexCmd(&repoRoot))
 
 	return rootCmd
 }

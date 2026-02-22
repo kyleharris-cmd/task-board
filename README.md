@@ -73,6 +73,7 @@ tb status
 - `taskboard child create --parent-id ... --title ... --files ...`
 - `taskboard pickup <child-id>`
 - `taskboard status` (alias: `taskboard stat`)
+- `taskboard codex [--json]`
 
 ## HTTP API (v1)
 
@@ -106,6 +107,12 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 3. Create child tasks from parent design: `tb child create --parent-id ... --title ... --files ...`.
 4. Pick up child task: `tb pickup <child-id>`.
 5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
+
+## Codex Session Access
+
+- `tb init` now ensures `AGENTS.md` exists and includes the taskboard protocol snippet.
+- Use `tb codex` for a quick non-interactive snapshot (active checkouts + ready-for-implementation tasks).
+- Use `tb codex --json` for machine-readable output in agent sessions.
 
 ## Task References
 

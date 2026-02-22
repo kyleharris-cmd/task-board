@@ -94,8 +94,17 @@ func ensureGitignoreContains(repoRoot, line string) error {
 
 func ensureAgentsTaskboardSnippet(repoRoot string) error {
 	agentsPath := filepath.Join(repoRoot, "AGENTS.md")
+	snippet, err := templateFS.ReadFile("templates/agents.taskboard.snippet.md")
+	if err != nil {
+		return fmt.Errorf("read AGENTS snippet template: %w", err)
+	}
+
 	raw, err := os.ReadFile(agentsPath)
 	if os.IsNotExist(err) {
+		initial := "# AGENTS\n\n" + string(snippet) + "\n"
+		if err := os.WriteFile(agentsPath, []byte(initial), 0o644); err != nil {
+			return fmt.Errorf("create AGENTS.md with taskboard protocol: %w", err)
+		}
 		return nil
 	}
 	if err != nil {
@@ -104,11 +113,6 @@ func ensureAgentsTaskboardSnippet(repoRoot string) error {
 	content := string(raw)
 	if strings.Contains(content, "## Taskboard Protocol") {
 		return nil
-	}
-
-	snippet, err := templateFS.ReadFile("templates/agents.taskboard.snippet.md")
-	if err != nil {
-		return fmt.Errorf("read AGENTS snippet template: %w", err)
 	}
 
 	if !strings.HasSuffix(content, "\n") {
