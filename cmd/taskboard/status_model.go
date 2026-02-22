@@ -384,6 +384,19 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.applySelectedEditorCompletion()
 				return m, nil
 			}
+		case "j", "down":
+			if m.completion != nil && len(m.completion.matches) > 0 {
+				m.completion.selected = (m.completion.selected + 1) % len(m.completion.matches)
+				return m, nil
+			}
+		case "k", "up":
+			if m.completion != nil && len(m.completion.matches) > 0 {
+				m.completion.selected--
+				if m.completion.selected < 0 {
+					m.completion.selected = len(m.completion.matches) - 1
+				}
+				return m, nil
+			}
 		case "tab":
 			m.advanceEditorCompletion()
 			return m, nil
@@ -730,6 +743,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			"",
 			"Inline Editor",
 			"tab : open/cycle path suggestions",
+			"j/k : move suggestion selection",
 			"enter : accept selected suggestion",
 			"ctrl+s or esc : save",
 			"ctrl+q : cancel",
@@ -793,7 +807,7 @@ func (m statusModel) renderCompletionList() string {
 	if m.completion == nil || len(m.completion.matches) == 0 {
 		return ""
 	}
-	lines := []string{"Path Suggestions (Tab=cycle, Enter=insert, Esc=close list)"}
+	lines := []string{"Path Suggestions (Tab/j/k=move, Enter=insert, Esc=close list)"}
 	for i, match := range m.completion.matches {
 		prefix := "  "
 		if i == m.completion.selected {
