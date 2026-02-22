@@ -40,7 +40,18 @@ tb init
 tb stat
 ```
 
-`tb stat` is the first-class interface for humans. Use it as your primary day-to-day task workflow UI.
+## Interface Model
+
+Task Board supports three interaction paths. Use the one that matches your actor and intent:
+
+- Human primary interface: `tb stat` (interactive TUI, first-class path for day-to-day task work).
+- Agent/automation CLI: `tb ...` subcommands (`task`, `parent`, `child`, lifecycle commands, `tb codex`).
+- HTTP API integrations: `taskboard serve` + `/tasks` endpoints.
+
+Rule of thumb:
+
+- Humans should primarily work in `tb stat`.
+- Agents and scripts should primarily use non-interactive CLI or API calls.
 
 ## Quick Start (In Any Target Repo)
 
@@ -52,7 +63,67 @@ tb status
 
 For human usage, prefer `tb stat`/`tb status` over individual subcommands.
 
-## Current Commands
+## Human Workflow (Primary)
+
+Use `tb stat` for your normal async coordination loop:
+
+1. Open board: `tb stat`.
+2. Scan status/owner/lease at a glance.
+3. Open a task with `Enter`, edit, create parent/child tasks, and move state.
+4. Quit and re-open anytime for async status checks.
+
+`tb status` and `tb stat` are aliases.
+
+### `tb stat` View and Navigation
+
+- Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
+- Auto-refreshes every 5 seconds.
+- Shows agent-active work via `active[AGENT]` lease marker.
+- `tb stat` is editable by default for human workflow.
+- Use `tb stat --read-only` when you only want monitoring with no in-panel writes.
+- Keys:
+- `j/k`: move selection.
+- `Enter`: open highlighted task editor.
+- `Tab`: toggle filter (`all`/`agent-active`).
+- `Space`: collapse/expand parent.
+- `r`: manual refresh.
+- `?`: open command palette/help.
+- `q`: quit.
+
+### `tb stat` Command Mode (Task Actions)
+
+- `:(e)dit <row-number>`: edit selected row design artifact (`:e1` and `:edit1` supported).
+- `:cp [optional title]`: create parent task from editor template.
+- `:cc [optional title]`: create child task from current row context.
+- `:s|:state|:to <state>`: transition highlighted task state.
+- `Tab` after `:s`/`:state`/`:to`: cycle policy-allowed next states, `Enter` to apply.
+
+### Inline Editor Behavior
+
+- First line template for `:cp`/`:cc`: `Title: ...` (prefix is stripped on save).
+- `tab`: open/cycle directory-level path suggestions.
+- `j/k`: move suggestion selection.
+- `enter`: insert selected suggestion (directories drill down).
+- `esc` or `ctrl+s`: save and close.
+- `ctrl+q`: cancel without saving.
+- Optional vim mode: `TB_KEYMAP=vim tb stat`.
+  - Status view: `gg`/`G` jump, `h`/`l` collapse/expand parent.
+  - Editor view: `NORMAL`/`INSERT` flow (`i/a/o` insert, `Esc` normal, `Enter` save).
+
+## Agent Workflow (CLI/Automation)
+
+For Codex or other agents, prefer explicit CLI flow and machine-readable output:
+
+1. Ensure board exists: `tb init`.
+2. Read board snapshot (`tb codex` for human-readable, `tb codex --json` for machine-readable).
+3. Pick up and move work with lifecycle commands (`tb pickup`, `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`) or lower-level `tb task ...` commands.
+4. Persist context/design artifacts via `tb artifact add` or TUI edit flows if intentionally interactive.
+
+Agent identity must be explicit for mutating CLI/API calls:
+
+- `--actor-type agent --actor-id ... --actor-name ...`
+
+## CLI Reference (Non-Interactive)
 
 Most commands below are useful for scripting, automation, or agent integrations. Human users should primarily work from `tb stat`.
 
@@ -97,24 +168,6 @@ Most commands below are useful for scripting, automation, or agent integrations.
 
 All mutating endpoints take a structured actor payload (`type`, `id`, `display_name`).
 
-## Default Repo Layout (target repos)
-
-- `.taskboard/board.db`
-- `.taskboard/policy.yaml`
-- `.taskboard/tasks/<task-id>/...`
-- `.taskboard/WORKFLOW.md`
-- `.taskboard/PROMPTS/idea-to-design.txt`
-- `.taskboard/PROMPTS/design-to-parent-and-children.txt`
-- `.taskboard/PROMPTS/implement-child-task.txt`
-
-## Workflow-First Usage
-
-1. In target repo, run `tb init`.
-2. Create parent design task: `tb parent create --title "..."`.
-3. Create child tasks from parent design: `tb child create --parent-id ... --title ... --files ...`.
-4. Pick up child task: `tb pickup <child-id>`.
-5. Execute lifecycle: `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`.
-
 ## Codex Session Access
 
 - `tb init` now ensures `AGENTS.md` exists and includes the taskboard protocol snippet.
@@ -127,33 +180,22 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - Commands accept either short refs or full internal IDs.
 - `tb task list` shows both short ref and internal ID.
 
-## Status Board
-
-- Run `tb status` (or `tb stat`) to open a git-log style modal board.
-- This is the primary, first-class human interface for interacting with tasks.
-- Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
-- Auto-refreshes every 5 seconds for async monitoring.
-- Shows agent-active work via `active[AGENT]` lease marker.
-- Keys: `j/k` move, `enter` open highlighted task, `tab` toggle filter (`all`/`agent-active`), `space` collapse parent, `r` refresh, `?` open command palette/help, `q` quit.
-- `tb stat` is editable by default for human workflow.
-- Use `tb stat --read-only` when you only want monitoring with no in-panel writes.
-- Command mode shortcuts:
-- `:(e)dit <row-number>`: edit the selected row's primary design artifact (`:e1` and `:edit1` are supported).
-- `:cp [optional title]`: create parent task from editor (`Title:` helper on line 1; prefix stripped automatically).
-- `:cc [optional title]`: create child task from editor under current row context (line 1 template is `Title: ...`; prefix is stripped automatically).
-- `:s|:state|:to <state>`: transition highlighted task state (supports shorthands like `done`, `ready`, `rfi`, `in-progress`).
-  - Press `Tab` after `:s`/`:state`/`:to` to cycle policy-allowed next states for the highlighted task.
-- In the inline editor: `tab` opens/cycles directory-level path suggestions, `j/k` moves selection, `enter` inserts selected suggestion (directories keep drilling down), `esc` or `ctrl+s` saves/closes, `ctrl+q` cancels.
-- Optional vim keymap mode: run with `TB_KEYMAP=vim tb stat`.
-  - Status view: `gg`/`G` jump top/bottom, `h`/`l` collapse/expand parent.
-  - Inline editor: starts in `NORMAL`; `i/a/o` enters `INSERT`; `Esc` returns to `NORMAL`; `Enter` saves.
-
 ## Actor Identity Rules
 
 - Human workflow commands default to git identity (`user.name`, `user.email`).
 - If missing, `tb` prompts to set git identity and asks repo-local vs global scope.
 - Agent calls must explicitly declare actor identity (`--actor-type agent --actor-id ... --actor-name ...`).
 - Lease gating is policy-driven and can be actor-specific via `lease_required_by_actor` in `.taskboard/policy.yaml`.
+
+## Default Repo Layout (target repos)
+
+- `.taskboard/board.db`
+- `.taskboard/policy.yaml`
+- `.taskboard/tasks/<task-id>/...`
+- `.taskboard/WORKFLOW.md`
+- `.taskboard/PROMPTS/idea-to-design.txt`
+- `.taskboard/PROMPTS/design-to-parent-and-children.txt`
+- `.taskboard/PROMPTS/implement-child-task.txt`
 
 ## Development
 
