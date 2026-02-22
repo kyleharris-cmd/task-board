@@ -4,11 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -36,10 +39,6 @@ type statusOpMsg struct {
 	err    error
 }
 
-type statusEditorDoneMsg struct {
-	err error
-}
-
 type pendingEditorMode int
 
 const (
@@ -54,8 +53,6 @@ type pendingEditSession struct {
 	shortRef     string
 	artifactType domain.ArtifactType
 	parentID     string
-	tmpPath      string
-	cleanup      func()
 }
 
 type statusRow struct {
@@ -90,7 +87,10 @@ type statusModel struct {
 	commandMode   bool
 	commandInput  textinput.Model
 	helpMode      bool
+	editorMode    bool
+	editorInput   textarea.Model
 	pendingEdit   *pendingEditSession
+	repoFiles     []string
 }
 
 func newStatusModel(svc *app.Service, actor domain.Actor, editable bool) statusModel {
@@ -108,6 +108,7 @@ func newStatusModel(svc *app.Service, actor domain.Actor, editable bool) statusM
 		filter:       filterAll,
 		collapsed:    map[string]bool{},
 		commandInput: in,
+		repoFiles:    nil,
 	}
 }
 
@@ -116,6 +117,10 @@ func (m statusModel) Init() tea.Cmd {
 }
 
 func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	if m.editorMode {
+		return m.updateEditorMode(msg)
+	}
+
 	if m.helpMode {
 		switch msg := msg.(type) {
 		case tea.WindowSizeMsg:
@@ -166,125 +171,6 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.status = msg.status
 		return m, loadStatusCmd(m.svc)
-	case statusEditorDoneMsg:
-		if m.pendingEdit == nil {
-			return m, nil
-		}
-		session := m.pendingEdit
-		m.pendingEdit = nil
-		if session.cleanup != nil {
-			session.cleanup()
-		}
-		if msg.err != nil {
-			m.errText = msg.err.Error()
-			m.status = "Edit failed"
-			return m, nil
-		}
-
-		content, readErr := readEditedContent(session.tmpPath)
-		if readErr != nil {
-			m.errText = readErr.Error()
-			m.status = "Edit failed"
-			return m, nil
-		}
-		if strings.TrimSpace(content) == "" {
-			m.errText = "content was empty"
-			m.status = "Edit canceled"
-			return m, nil
-		}
-		switch session.mode {
-		case pendingEditorModeCreateChild:
-			title, body, parseErr := parseTitleAndBody(content)
-			if parseErr != nil {
-				m.errText = parseErr.Error()
-				m.status = "Create child failed"
-				return m, nil
-			}
-			childID, createErr := m.svc.CreateTask(context.Background(), app.CreateTaskInput{
-				Title:             title,
-				Description:       body,
-				TaskType:          "implementation",
-				Priority:          3,
-				ParentID:          &session.parentID,
-				RequiredForParent: true,
-			})
-			if createErr != nil {
-				m.errText = createErr.Error()
-				m.status = "Create child failed"
-				return m, nil
-			}
-			if strings.TrimSpace(body) != "" {
-				if _, _, addErr := m.svc.AddArtifact(context.Background(), childID, domain.ArtifactChildDesign, body, m.actor); addErr != nil {
-					m.errText = addErr.Error()
-					m.status = "Create child failed"
-					return m, nil
-				}
-			}
-			task, lookupErr := m.svc.GetTask(context.Background(), childID)
-			if lookupErr != nil {
-				m.errText = lookupErr.Error()
-				m.status = "Create child failed"
-				return m, nil
-			}
-			ref := task.ShortRef
-			if ref == "" {
-				ref = task.ID
-			}
-			m.errText = ""
-			m.status = fmt.Sprintf("created child %s (%s)", ref, title)
-			return m, loadStatusCmd(m.svc)
-		case pendingEditorModeCreateParent:
-			title, body, parseErr := parseTitleAndBody(content)
-			if parseErr != nil {
-				m.errText = parseErr.Error()
-				m.status = "Create parent failed"
-				return m, nil
-			}
-			parentID, createErr := m.svc.CreateTask(context.Background(), app.CreateTaskInput{
-				Title:       title,
-				Description: body,
-				TaskType:    "design",
-				Priority:    2,
-			})
-			if createErr != nil {
-				m.errText = createErr.Error()
-				m.status = "Create parent failed"
-				return m, nil
-			}
-			if strings.TrimSpace(body) != "" {
-				if _, _, addErr := m.svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, body, m.actor); addErr != nil {
-					m.errText = addErr.Error()
-					m.status = "Create parent failed"
-					return m, nil
-				}
-			}
-			task, lookupErr := m.svc.GetTask(context.Background(), parentID)
-			if lookupErr != nil {
-				m.errText = lookupErr.Error()
-				m.status = "Create parent failed"
-				return m, nil
-			}
-			ref := task.ShortRef
-			if ref == "" {
-				ref = task.ID
-			}
-			m.errText = ""
-			m.status = fmt.Sprintf("created parent %s (%s)", ref, title)
-			return m, loadStatusCmd(m.svc)
-		default:
-			if _, _, addErr := m.svc.AddArtifact(context.Background(), session.taskID, session.artifactType, content, m.actor); addErr != nil {
-				m.errText = addErr.Error()
-				m.status = "Edit failed"
-				return m, nil
-			}
-			ref := session.shortRef
-			if ref == "" {
-				ref = session.taskID
-			}
-			m.errText = ""
-			m.status = fmt.Sprintf("updated %s for %s", session.artifactType, ref)
-			return m, loadStatusCmd(m.svc)
-		}
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "?":
@@ -386,25 +272,16 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 					initial = fmt.Sprintf("# %s\n\n", artifactType)
 				}
 
-				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
-				if prepErr != nil {
-					return m, func() tea.Msg {
-						return statusOpMsg{status: "Edit failed", err: prepErr}
-					}
-				}
 				m.pendingEdit = &pendingEditSession{
 					mode:         pendingEditorModeEdit,
 					taskID:       row.TaskID,
 					shortRef:     row.ShortRef,
 					artifactType: artifactType,
-					tmpPath:      tmpPath,
-					cleanup:      cleanup,
 				}
+				m.openInlineEditor(initial)
 				m.status = "Editing..."
 				m.errText = ""
-				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					return statusEditorDoneMsg{err: err}
-				})
+				return m, nil
 			}
 			if verb == "cc" {
 				if len(m.visible) == 0 {
@@ -426,45 +303,27 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if strings.TrimSpace(arg) != "" {
 					initial = "Title: " + strings.TrimSpace(arg) + "\n\n"
 				}
-				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
-				if prepErr != nil {
-					return m, func() tea.Msg {
-						return statusOpMsg{status: "Create child failed", err: prepErr}
-					}
-				}
 				m.pendingEdit = &pendingEditSession{
 					mode:     pendingEditorModeCreateChild,
 					parentID: parentID,
-					tmpPath:  tmpPath,
-					cleanup:  cleanup,
 				}
+				m.openInlineEditor(initial)
 				m.status = "Creating child..."
 				m.errText = ""
-				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					return statusEditorDoneMsg{err: err}
-				})
+				return m, nil
 			}
 			if verb == "cp" {
 				initial := "Title: \n\n"
 				if strings.TrimSpace(arg) != "" {
 					initial = "Title: " + strings.TrimSpace(arg) + "\n\n"
 				}
-				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
-				if prepErr != nil {
-					return m, func() tea.Msg {
-						return statusOpMsg{status: "Create parent failed", err: prepErr}
-					}
-				}
 				m.pendingEdit = &pendingEditSession{
-					mode:    pendingEditorModeCreateParent,
-					tmpPath: tmpPath,
-					cleanup: cleanup,
+					mode: pendingEditorModeCreateParent,
 				}
+				m.openInlineEditor(initial)
 				m.status = "Creating parent..."
 				m.errText = ""
-				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
-					return statusEditorDoneMsg{err: err}
-				})
+				return m, nil
 			}
 			return m, runStatusCommand(m.svc, m.visible, m.cursor, m.actor, cmdText)
 		}
@@ -472,6 +331,188 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.commandInput, cmd = m.commandInput.Update(msg)
 	return m, cmd
+}
+
+func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.editorInput.SetWidth(max(50, m.width-16))
+		m.editorInput.SetHeight(max(10, m.height-12))
+		return m, nil
+	case tea.KeyMsg:
+		switch msg.String() {
+		case "esc":
+			m.editorMode = false
+			m.pendingEdit = nil
+			m.status = "Edit canceled"
+			m.errText = ""
+			return m, nil
+		case "ctrl+s":
+			return m.saveInlineEditor()
+		case "tab":
+			m.applyEditorPathCompletion()
+			return m, nil
+		}
+	}
+	var cmd tea.Cmd
+	m.editorInput, cmd = m.editorInput.Update(msg)
+	return m, cmd
+}
+
+func (m *statusModel) saveInlineEditor() (tea.Model, tea.Cmd) {
+	if m.pendingEdit == nil {
+		m.editorMode = false
+		m.status = "Edit canceled"
+		return m, nil
+	}
+	session := m.pendingEdit
+	m.pendingEdit = nil
+	m.editorMode = false
+
+	content := m.editorInput.Value()
+	if strings.TrimSpace(content) == "" {
+		m.errText = "content was empty"
+		m.status = "Edit canceled"
+		return m, nil
+	}
+
+	switch session.mode {
+	case pendingEditorModeCreateChild:
+		title, body, parseErr := parseTitleAndBody(content)
+		if parseErr != nil {
+			m.errText = parseErr.Error()
+			m.status = "Create child failed"
+			return m, nil
+		}
+		childID, createErr := m.svc.CreateTask(context.Background(), app.CreateTaskInput{
+			Title:             title,
+			Description:       body,
+			TaskType:          "implementation",
+			Priority:          3,
+			ParentID:          &session.parentID,
+			RequiredForParent: true,
+		})
+		if createErr != nil {
+			m.errText = createErr.Error()
+			m.status = "Create child failed"
+			return m, nil
+		}
+		if strings.TrimSpace(body) != "" {
+			if _, _, addErr := m.svc.AddArtifact(context.Background(), childID, domain.ArtifactChildDesign, body, m.actor); addErr != nil {
+				m.errText = addErr.Error()
+				m.status = "Create child failed"
+				return m, nil
+			}
+		}
+		task, lookupErr := m.svc.GetTask(context.Background(), childID)
+		if lookupErr != nil {
+			m.errText = lookupErr.Error()
+			m.status = "Create child failed"
+			return m, nil
+		}
+		ref := task.ShortRef
+		if ref == "" {
+			ref = task.ID
+		}
+		m.errText = ""
+		m.status = fmt.Sprintf("created child %s (%s)", ref, title)
+		return m, loadStatusCmd(m.svc)
+	case pendingEditorModeCreateParent:
+		title, body, parseErr := parseTitleAndBody(content)
+		if parseErr != nil {
+			m.errText = parseErr.Error()
+			m.status = "Create parent failed"
+			return m, nil
+		}
+		parentID, createErr := m.svc.CreateTask(context.Background(), app.CreateTaskInput{
+			Title:       title,
+			Description: body,
+			TaskType:    "design",
+			Priority:    2,
+		})
+		if createErr != nil {
+			m.errText = createErr.Error()
+			m.status = "Create parent failed"
+			return m, nil
+		}
+		if strings.TrimSpace(body) != "" {
+			if _, _, addErr := m.svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, body, m.actor); addErr != nil {
+				m.errText = addErr.Error()
+				m.status = "Create parent failed"
+				return m, nil
+			}
+		}
+		task, lookupErr := m.svc.GetTask(context.Background(), parentID)
+		if lookupErr != nil {
+			m.errText = lookupErr.Error()
+			m.status = "Create parent failed"
+			return m, nil
+		}
+		ref := task.ShortRef
+		if ref == "" {
+			ref = task.ID
+		}
+		m.errText = ""
+		m.status = fmt.Sprintf("created parent %s (%s)", ref, title)
+		return m, loadStatusCmd(m.svc)
+	default:
+		if _, _, addErr := m.svc.AddArtifact(context.Background(), session.taskID, session.artifactType, content, m.actor); addErr != nil {
+			m.errText = addErr.Error()
+			m.status = "Edit failed"
+			return m, nil
+		}
+		ref := session.shortRef
+		if ref == "" {
+			ref = session.taskID
+		}
+		m.errText = ""
+		m.status = fmt.Sprintf("updated %s for %s", session.artifactType, ref)
+		return m, loadStatusCmd(m.svc)
+	}
+}
+
+func (m *statusModel) applyEditorPathCompletion() {
+	if len(m.repoFiles) == 0 {
+		m.repoFiles = collectRepoFiles(m.svc.RepoRoot())
+	}
+	prefix := m.editorCurrentTokenPrefix()
+	if prefix == "" {
+		return
+	}
+	rawPrefix := strings.TrimLeft(prefix, "\"'")
+	if rawPrefix == "" {
+		return
+	}
+	match, ok := bestPathCompletion(rawPrefix, m.repoFiles)
+	if !ok || len(match) <= len(rawPrefix) {
+		return
+	}
+	m.editorInput.InsertString(match[len(rawPrefix):])
+}
+
+func (m statusModel) editorCurrentTokenPrefix() string {
+	value := m.editorInput.Value()
+	lines := strings.Split(value, "\n")
+	lineIdx := m.editorInput.Line()
+	if lineIdx < 0 || lineIdx >= len(lines) {
+		return ""
+	}
+	line := lines[lineIdx]
+	col := m.editorInput.LineInfo().CharOffset
+	if col < 0 {
+		col = 0
+	}
+	r := []rune(line)
+	if col > len(r) {
+		col = len(r)
+	}
+	start := col
+	for start > 0 && isPathTokenRune(r[start-1]) {
+		start--
+	}
+	return string(r[start:col])
 }
 
 func (m statusModel) View() string {
@@ -489,6 +530,11 @@ func (m statusModel) View() string {
 	if m.helpMode {
 		overlay := m.renderHelpOverlay(header + "\n" + table + "\n" + footer)
 		return overlay
+	}
+
+	if m.editorMode {
+		editor := m.renderEditorOverlay(header + "\n" + table + "\n" + footer)
+		return editor
 	}
 
 	if m.commandMode {
@@ -588,6 +634,11 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
 			":cp [optional title]  create parent from editor (line 1: Title: ..., rest=content)",
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
+			"",
+			"Inline Editor",
+			"tab : complete file path token",
+			"ctrl+s : save",
+			"esc : cancel",
 		)
 	} else {
 		lines = append(lines, "(disabled in read-only mode; run tb stat without --read-only)")
@@ -610,6 +661,33 @@ func (m statusModel) renderHelpOverlay(background string) string {
 	topPad := max(1, (m.height-18)/2)
 	leftPad := max(1, (m.width-boxWidth)/2)
 	return dimmed + "\n" + strings.Repeat("\n", topPad) + lipgloss.NewStyle().PaddingLeft(leftPad).Render(box)
+}
+
+func (m *statusModel) openInlineEditor(initial string) {
+	ta := textarea.New()
+	ta.SetValue(initial)
+	ta.Focus()
+	ta.CharLimit = 0
+	ta.Prompt = "│ "
+	ta.ShowLineNumbers = true
+	ta.SetWidth(max(50, m.width-16))
+	ta.SetHeight(max(10, m.height-12))
+	m.editorInput = ta
+	m.editorMode = true
+}
+
+func (m statusModel) renderEditorOverlay(background string) string {
+	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
+	title := "Inline Editor  |  tab complete path  |  ctrl+s save  |  esc cancel"
+	panel := lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		Foreground(lipgloss.Color("252")).
+		Background(lipgloss.Color("236")).
+		Padding(1, 1).
+		Width(max(60, m.width-10)).
+		Height(max(14, m.height-8)).
+		Render(lipgloss.NewStyle().Bold(true).Render(title) + "\n\n" + m.editorInput.View())
+	return dimmed + "\n" + lipgloss.NewStyle().PaddingLeft(3).PaddingTop(1).Render(panel)
 }
 
 func (m *statusModel) recomputeVisible() {
@@ -951,6 +1029,80 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 		return verb, strings.TrimSpace(title), nil
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
+	}
+}
+
+func collectRepoFiles(repoRoot string) []string {
+	out := make([]string, 0, 256)
+	_ = filepath.WalkDir(repoRoot, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return nil
+		}
+		if d.IsDir() {
+			switch d.Name() {
+			case ".git", ".taskboard", "bin", "node_modules":
+				if path != repoRoot {
+					return filepath.SkipDir
+				}
+			}
+			return nil
+		}
+		rel, relErr := filepath.Rel(repoRoot, path)
+		if relErr != nil {
+			return nil
+		}
+		out = append(out, filepath.ToSlash(rel))
+		return nil
+	})
+	sort.Strings(out)
+	return out
+}
+
+func bestPathCompletion(prefix string, candidates []string) (string, bool) {
+	matches := make([]string, 0, 8)
+	for _, c := range candidates {
+		if strings.HasPrefix(c, prefix) {
+			matches = append(matches, c)
+			if len(matches) > 100 {
+				break
+			}
+		}
+	}
+	if len(matches) == 0 {
+		return "", false
+	}
+	if len(matches) == 1 {
+		return matches[0], true
+	}
+	common := matches[0]
+	for _, m := range matches[1:] {
+		for !strings.HasPrefix(m, common) {
+			if len(common) == 0 {
+				return "", false
+			}
+			common = common[:len(common)-1]
+		}
+	}
+	if len(common) <= len(prefix) {
+		return "", false
+	}
+	return common, true
+}
+
+func isPathTokenRune(r rune) bool {
+	switch {
+	case r >= 'a' && r <= 'z':
+		return true
+	case r >= 'A' && r <= 'Z':
+		return true
+	case r >= '0' && r <= '9':
+		return true
+	}
+	switch r {
+	case '/', '.', '_', '-', '"', '\'':
+		return true
+	default:
+		return false
 	}
 }
 

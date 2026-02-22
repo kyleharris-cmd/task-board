@@ -98,6 +98,10 @@ func (s *Service) Close() error {
 	return s.db.Close()
 }
 
+func (s *Service) RepoRoot() string {
+	return s.repoRoot
+}
+
 type CreateTaskInput struct {
 	Title             string
 	Description       string
