@@ -52,6 +52,7 @@ tb status
 
 - `taskboard init --repo-root <path>`
 - `taskboard policy validate --file <path>`
+- `taskboard policy migrate --file <path> [--dry-run]`
 - `taskboard task create --title ... [--parent-id ...]`
 - `taskboard task list [--state "Backlog"]`
 - `taskboard task claim --id ... --actor-type ... --actor-id ... --actor-name ...`
