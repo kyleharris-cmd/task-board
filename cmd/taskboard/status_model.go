@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
@@ -24,6 +25,11 @@ type statusFilter int
 const (
 	filterAll statusFilter = iota
 	filterAgentActive
+)
+
+const (
+	keymapDefault = "default"
+	keymapVim     = "vim"
 )
 
 type statusLoadedMsg struct {
@@ -80,6 +86,7 @@ type statusModel struct {
 	svc           *app.Service
 	actor         domain.Actor
 	editable      bool
+	keymapMode    string
 	rows          []statusRow
 	visible       []statusRow
 	cursor        int
@@ -94,6 +101,8 @@ type statusModel struct {
 	commandInput  textinput.Model
 	helpMode      bool
 	editorMode    bool
+	editorInsert  bool
+	pendingG      bool
 	editorInput   textarea.Model
 	completion    *editorCompletion
 	pendingEdit   *pendingEditSession
@@ -111,6 +120,7 @@ func newStatusModel(svc *app.Service, actor domain.Actor, editable bool) statusM
 		svc:          svc,
 		actor:        actor,
 		editable:     editable,
+		keymapMode:   resolveKeymapMode(os.Getenv("TB_KEYMAP")),
 		status:       "Loading task status...",
 		filter:       filterAll,
 		collapsed:    map[string]bool{},
@@ -179,6 +189,26 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.status = msg.status
 		return m, loadStatusCmd(m.svc)
 	case tea.KeyMsg:
+		if m.keymapMode == keymapVim {
+			switch msg.String() {
+			case "g":
+				if m.pendingG {
+					m.cursor = 0
+					m.pendingG = false
+					return m, nil
+				}
+				m.pendingG = true
+				return m, nil
+			case "G":
+				if len(m.visible) > 0 {
+					m.cursor = len(m.visible) - 1
+				}
+				m.pendingG = false
+				return m, nil
+			default:
+				m.pendingG = false
+			}
+		}
 		switch msg.String() {
 		case "?":
 			m.helpMode = true
@@ -206,6 +236,24 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			m.collapsed[row.TaskID] = !m.collapsed[row.TaskID]
 			m.recomputeVisible()
+		case "h":
+			if m.keymapMode == keymapVim {
+				row, ok := m.selected()
+				if ok && row.HasChildren {
+					m.collapsed[row.TaskID] = true
+					m.recomputeVisible()
+				}
+				return m, nil
+			}
+		case "l":
+			if m.keymapMode == keymapVim {
+				row, ok := m.selected()
+				if ok && row.HasChildren {
+					m.collapsed[row.TaskID] = false
+					m.recomputeVisible()
+				}
+				return m, nil
+			}
 		case "enter":
 			if !m.editable {
 				m.status = "Read-only mode"
@@ -363,6 +411,9 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.editorInput.SetHeight(max(10, m.height-12))
 		return m, nil
 	case tea.KeyMsg:
+		if m.keymapMode == keymapVim {
+			return m.updateEditorModeVim(msg)
+		}
 		switch msg.String() {
 		case "esc":
 			if m.completion != nil {
@@ -408,6 +459,98 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.refreshEditorCompletion(false)
 	}
 	return m, cmd
+}
+
+func (m statusModel) updateEditorModeVim(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.editorInsert {
+		switch msg.String() {
+		case "esc":
+			if m.completion != nil {
+				m.completion = nil
+				return m, nil
+			}
+			m.editorInsert = false
+			return m, nil
+		case "ctrl+s":
+			return m.saveInlineEditor()
+		case "ctrl+q":
+			m.editorMode = false
+			m.pendingEdit = nil
+			m.completion = nil
+			m.editorInsert = false
+			m.status = "Edit canceled"
+			m.errText = ""
+			return m, nil
+		case "tab":
+			m.advanceEditorCompletion()
+			return m, nil
+		case "enter":
+			if m.completion != nil {
+				m.applySelectedEditorCompletion()
+				return m, nil
+			}
+		}
+		var cmd tea.Cmd
+		m.editorInput, cmd = m.editorInput.Update(msg)
+		if m.completion != nil {
+			m.refreshEditorCompletion(false)
+		}
+		return m, cmd
+	}
+
+	switch msg.String() {
+	case "i", "a", "o":
+		if msg.String() == "o" {
+			m.editorInput.InsertString("\n")
+		}
+		m.editorInsert = true
+		return m, nil
+	case "j", "down":
+		if m.completion != nil && len(m.completion.matches) > 0 {
+			m.completion.selected = (m.completion.selected + 1) % len(m.completion.matches)
+			return m, nil
+		}
+		m.editorInput.CursorDown()
+		return m, nil
+	case "k", "up":
+		if m.completion != nil && len(m.completion.matches) > 0 {
+			m.completion.selected--
+			if m.completion.selected < 0 {
+				m.completion.selected = len(m.completion.matches) - 1
+			}
+			return m, nil
+		}
+		m.editorInput.CursorUp()
+		return m, nil
+	case "h", "left":
+		// We only expose line-based movement in this first vim pass.
+		return m, nil
+	case "l", "right":
+		// We only expose line-based movement in this first vim pass.
+		return m, nil
+	case "tab":
+		m.advanceEditorCompletion()
+		return m, nil
+	case "enter":
+		if m.completion != nil {
+			m.applySelectedEditorCompletion()
+			return m, nil
+		}
+		return m.saveInlineEditor()
+	case "esc":
+		if m.completion != nil {
+			m.completion = nil
+		}
+		return m, nil
+	case "q", "ctrl+q":
+		m.editorMode = false
+		m.pendingEdit = nil
+		m.completion = nil
+		m.status = "Edit canceled"
+		m.errText = ""
+		return m, nil
+	}
+	return m, nil
 }
 
 func (m *statusModel) saveInlineEditor() (tea.Model, tea.Cmd) {
@@ -748,6 +891,14 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			"ctrl+s or esc : save",
 			"ctrl+q : cancel",
 		)
+		if m.keymapMode == keymapVim {
+			lines = append(lines,
+				"",
+				"Vim Mode (TB_KEYMAP=vim)",
+				"status: gg/G jump, h/l collapse/expand",
+				"editor: starts NORMAL, i/a/o enter INSERT, Esc returns NORMAL",
+			)
+		}
 	} else {
 		lines = append(lines, "(disabled in read-only mode; run tb stat without --read-only)")
 	}
@@ -782,12 +933,20 @@ func (m *statusModel) openInlineEditor(initial string) {
 	ta.SetHeight(max(10, m.height-12))
 	m.editorInput = ta
 	m.editorMode = true
+	m.editorInsert = m.keymapMode != keymapVim
 	m.completion = nil
 }
 
 func (m statusModel) renderEditorOverlay(background string) string {
 	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
 	title := "Inline Editor  |  tab suggestions  |  enter accept  |  esc/ctrl+s save"
+	if m.keymapMode == keymapVim {
+		mode := "NORMAL"
+		if m.editorInsert {
+			mode = "INSERT"
+		}
+		title = fmt.Sprintf("Inline Editor [%s]  |  i/a/o insert  |  enter save  |  ctrl+q cancel", mode)
+	}
 	content := m.editorInput.View()
 	if m.completion != nil && len(m.completion.matches) > 0 {
 		content += "\n\n" + m.renderCompletionList()
@@ -1319,6 +1478,15 @@ func parseTitleAndBody(content string) (string, string, error) {
 		body = strings.TrimSpace(strings.Join(lines[1:], "\n"))
 	}
 	return title, body, nil
+}
+
+func resolveKeymapMode(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case keymapVim:
+		return keymapVim
+	default:
+		return keymapDefault
+	}
 }
 
 func min(a, b int) int {

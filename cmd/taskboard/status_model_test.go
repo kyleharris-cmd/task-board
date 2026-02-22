@@ -151,3 +151,20 @@ func TestListPathSuggestions(t *testing.T) {
 		t.Fatalf("prefix suggestions = %v want [cmd/taskboard/]", prefix)
 	}
 }
+
+func TestResolveKeymapMode(t *testing.T) {
+	t.Parallel()
+
+	if got := resolveKeymapMode("vim"); got != keymapVim {
+		t.Fatalf("resolveKeymapMode(vim)=%q want %q", got, keymapVim)
+	}
+	if got := resolveKeymapMode("VIM"); got != keymapVim {
+		t.Fatalf("resolveKeymapMode(VIM)=%q want %q", got, keymapVim)
+	}
+	if got := resolveKeymapMode(""); got != keymapDefault {
+		t.Fatalf("resolveKeymapMode(empty)=%q want %q", got, keymapDefault)
+	}
+	if got := resolveKeymapMode("unknown"); got != keymapDefault {
+		t.Fatalf("resolveKeymapMode(unknown)=%q want %q", got, keymapDefault)
+	}
+}
