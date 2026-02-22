@@ -383,9 +383,9 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 					parentID = *base.ParentID
 				}
 
-				initial := "\n\n"
+				initial := "Title: \n\n"
 				if strings.TrimSpace(arg) != "" {
-					initial = strings.TrimSpace(arg) + "\n\n"
+					initial = "Title: " + strings.TrimSpace(arg) + "\n\n"
 				}
 				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
 				if prepErr != nil {
@@ -526,7 +526,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 		lines = append(lines,
 			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
 			":cp \"task name\"  create parent task",
-			":cc [optional title]  create child from editor (line 1=title, rest=content)",
+			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
 		)
 	} else {
 		lines = append(lines, "(disabled in read-only mode; run tb stat without --read-only)")
@@ -906,6 +906,10 @@ func parseTitleAndBody(content string) (string, string, error) {
 		return "", "", fmt.Errorf("first line must contain a task title")
 	}
 	title := strings.TrimSpace(lines[0])
+	lower := strings.ToLower(title)
+	if strings.HasPrefix(lower, "title:") {
+		title = strings.TrimSpace(title[len("title:"):])
+	}
 	if title == "" {
 		return "", "", fmt.Errorf("first line must contain a task title")
 	}

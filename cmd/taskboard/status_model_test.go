@@ -63,3 +63,30 @@ func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 		t.Fatalf("parseStatusCommand(cc child title) = (%q, %q), want (cc, child title)", verb, arg)
 	}
 }
+
+func TestParseTitleAndBody(t *testing.T) {
+	t.Parallel()
+
+	title, body, err := parseTitleAndBody("Title: Add cache layer\n- detail 1\n- detail 2\n")
+	if err != nil {
+		t.Fatalf("parseTitleAndBody unexpected error: %v", err)
+	}
+	if title != "Add cache layer" {
+		t.Fatalf("title = %q, want %q", title, "Add cache layer")
+	}
+	if body != "- detail 1\n- detail 2" {
+		t.Fatalf("body = %q, want %q", body, "- detail 1\n- detail 2")
+	}
+
+	title, body, err = parseTitleAndBody("Plain title\nnotes")
+	if err != nil {
+		t.Fatalf("parseTitleAndBody plain-title unexpected error: %v", err)
+	}
+	if title != "Plain title" || body != "notes" {
+		t.Fatalf("plain-title parse = (%q, %q), want (%q, %q)", title, body, "Plain title", "notes")
+	}
+
+	if _, _, err := parseTitleAndBody("Title:\nbody"); err == nil {
+		t.Fatalf("expected empty Title: value to fail")
+	}
+}
