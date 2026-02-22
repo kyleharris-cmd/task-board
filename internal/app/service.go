@@ -102,6 +102,20 @@ func (s *Service) RepoRoot() string {
 	return s.repoRoot
 }
 
+func (s *Service) AllowedNextStates(ctx context.Context, taskID string, actorType domain.ActorType) ([]domain.State, error) {
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	next := make([]domain.State, 0, len(domain.AllStates))
+	for _, candidate := range domain.AllStates {
+		if s.policy.CanTransition(actorType, task.State, candidate) {
+			next = append(next, candidate)
+		}
+	}
+	return next, nil
+}
+
 type CreateTaskInput struct {
 	Title             string
 	Description       string

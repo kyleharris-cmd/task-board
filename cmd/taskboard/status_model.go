@@ -99,6 +99,9 @@ type statusModel struct {
 	lastRefreshed time.Time
 	commandMode   bool
 	commandInput  textinput.Model
+	commandCycle  []string
+	commandCycleK string
+	commandCycleI int
 	helpMode      bool
 	editorMode    bool
 	editorInsert  bool
@@ -257,6 +260,7 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.commandMode = true
 			m.commandInput.SetValue("")
 			m.commandInput.Focus()
+			m.resetCommandCycle()
 			return m, nil
 		}
 	}
@@ -301,15 +305,20 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.helpMode = true
 			m.commandMode = false
 			m.commandInput.Blur()
+			m.resetCommandCycle()
 			return m, nil
 		case "esc":
 			m.commandMode = false
 			m.commandInput.Blur()
+			m.resetCommandCycle()
 			return m, nil
+		case "tab":
+			return m.cycleStateTransitionCommand()
 		case "enter":
 			cmdText := strings.TrimSpace(m.commandInput.Value())
 			m.commandMode = false
 			m.commandInput.Blur()
+			m.resetCommandCycle()
 			if cmdText == "" {
 				return m, nil
 			}
@@ -408,7 +417,57 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.commandInput, cmd = m.commandInput.Update(msg)
+	if _, ok := msg.(tea.KeyMsg); ok {
+		m.resetCommandCycle()
+	}
 	return m, cmd
+}
+
+func (m *statusModel) resetCommandCycle() {
+	m.commandCycle = nil
+	m.commandCycleK = ""
+	m.commandCycleI = 0
+}
+
+func (m statusModel) cycleStateTransitionCommand() (tea.Model, tea.Cmd) {
+	row, ok := m.selected()
+	if !ok {
+		return m, nil
+	}
+	verb, prefix, valid := parseStateCommandForCompletion(m.commandInput.Value())
+	if !valid {
+		return m, nil
+	}
+	nextStates, err := m.svc.AllowedNextStates(context.Background(), row.TaskID, m.actor.Type)
+	if err != nil {
+		return m, func() tea.Msg {
+			return statusOpMsg{status: "State suggestions failed", err: err}
+		}
+	}
+	opts := make([]string, 0, len(nextStates))
+	for _, st := range nextStates {
+		label := strings.ToLower(string(st))
+		if prefix == "" || strings.HasPrefix(label, strings.ToLower(prefix)) {
+			opts = append(opts, label)
+		}
+	}
+	if len(opts) == 0 {
+		return m, func() tea.Msg {
+			return statusOpMsg{status: "State suggestions", err: fmt.Errorf("no matching next states")}
+		}
+	}
+
+	key := verb + "|" + strings.ToLower(prefix) + "|" + row.TaskID
+	if m.commandCycleK != key || len(m.commandCycle) == 0 {
+		m.commandCycle = opts
+		m.commandCycleK = key
+		m.commandCycleI = 0
+	} else {
+		m.commandCycleI = (m.commandCycleI + 1) % len(m.commandCycle)
+	}
+
+	m.commandInput.SetValue(fmt.Sprintf("%s %s", verb, m.commandCycle[m.commandCycleI]))
+	return m, nil
 }
 
 func (m statusModel) beginEditForRow(row statusRow) (tea.Model, tea.Cmd) {
@@ -932,6 +991,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":cp [optional title]  create parent from editor (line 1: Title: ..., rest=content)",
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
 			":s|:state|:to <state>  transition highlighted task state",
+			"  (tab after :s cycles allowed next states)",
 			"",
 			"Inline Editor",
 			"tab : open/cycle path suggestions",
@@ -1259,6 +1319,25 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 		return verb, stateArg, nil
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
+	}
+}
+
+func parseStateCommandForCompletion(cmdText string) (verb string, prefix string, ok bool) {
+	cmdText = strings.TrimSpace(strings.TrimPrefix(strings.TrimSpace(cmdText), ":"))
+	if cmdText == "" {
+		return "", "", false
+	}
+	parts := strings.Fields(cmdText)
+	if len(parts) == 0 {
+		return "", "", false
+	}
+	verb = strings.ToLower(parts[0])
+	switch verb {
+	case "s", "state", "to":
+		rest := strings.TrimSpace(cmdText[len(parts[0]):])
+		return verb, rest, true
+	default:
+		return "", "", false
 	}
 }
 

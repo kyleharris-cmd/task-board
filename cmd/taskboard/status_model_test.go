@@ -177,3 +177,21 @@ func TestParseStateCommandArg(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStateCommandForCompletion(t *testing.T) {
+	t.Parallel()
+
+	verb, prefix, ok := parseStateCommandForCompletion(":s ")
+	if !ok || verb != "s" || prefix != "" {
+		t.Fatalf("parseStateCommandForCompletion(:s ) = (%q,%q,%v)", verb, prefix, ok)
+	}
+
+	verb, prefix, ok = parseStateCommandForCompletion("state rea")
+	if !ok || verb != "state" || prefix != "rea" {
+		t.Fatalf("parseStateCommandForCompletion(state rea) = (%q,%q,%v)", verb, prefix, ok)
+	}
+
+	if _, _, ok = parseStateCommandForCompletion("cp test"); ok {
+		t.Fatalf("expected cp to not parse as state completion command")
+	}
+}
