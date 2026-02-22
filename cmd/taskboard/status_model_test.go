@@ -118,3 +118,36 @@ func TestBestPathCompletion(t *testing.T) {
 		t.Fatalf("bestPathCompletion expected no match, got (%q, %v)", got, ok)
 	}
 }
+
+func TestListPathSuggestions(t *testing.T) {
+	t.Parallel()
+
+	files := []string{
+		"README.md",
+		"cmd/taskboard/main.go",
+		"cmd/taskboard/status_model.go",
+		"internal/app/service.go",
+	}
+
+	root := listPathSuggestions("", files)
+	wantRoot := []string{"cmd/", "internal/", "README.md"}
+	if len(root) != len(wantRoot) {
+		t.Fatalf("root suggestions len=%d want=%d (%v)", len(root), len(wantRoot), root)
+	}
+	for i := range wantRoot {
+		if root[i] != wantRoot[i] {
+			t.Fatalf("root[%d]=%q want %q", i, root[i], wantRoot[i])
+		}
+	}
+
+	cmdLevel := listPathSuggestions("cmd/", files)
+	wantCmd := []string{"cmd/taskboard/"}
+	if len(cmdLevel) != len(wantCmd) || cmdLevel[0] != wantCmd[0] {
+		t.Fatalf("cmd level suggestions = %v want %v", cmdLevel, wantCmd)
+	}
+
+	prefix := listPathSuggestions("cmd/t", files)
+	if len(prefix) != 1 || prefix[0] != "cmd/taskboard/" {
+		t.Fatalf("prefix suggestions = %v want [cmd/taskboard/]", prefix)
+	}
+}

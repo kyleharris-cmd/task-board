@@ -391,7 +391,7 @@ func (m statusModel) updateEditorMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 	var cmd tea.Cmd
 	m.editorInput, cmd = m.editorInput.Update(msg)
-	if m.completion != nil {
+	if _, ok := msg.(tea.KeyMsg); ok && m.completion != nil {
 		m.refreshEditorCompletion(false)
 	}
 	return m, cmd
@@ -539,7 +539,11 @@ func (m *statusModel) applySelectedEditorCompletion() {
 	if suffix != "" {
 		m.editorInput.InsertString(suffix)
 	}
-	m.completion = nil
+	if strings.HasSuffix(selected, "/") {
+		m.refreshEditorCompletion(true)
+	} else {
+		m.completion = nil
+	}
 }
 
 func (m *statusModel) refreshEditorCompletion(forceShow bool) bool {
@@ -555,17 +559,10 @@ func (m *statusModel) refreshEditorCompletion(forceShow bool) bool {
 		return false
 	}
 
-	matches := make([]string, 0, 20)
-	for _, f := range m.repoFiles {
-		if strings.HasPrefix(f, query) {
-			if slashMode {
-				matches = append(matches, "/"+f)
-			} else {
-				matches = append(matches, f)
-			}
-			if len(matches) >= 20 {
-				break
-			}
+	matches := listPathSuggestions(query, m.repoFiles)
+	if slashMode {
+		for i := range matches {
+			matches[i] = "/" + matches[i]
 		}
 	}
 	if len(matches) == 0 {
@@ -1177,6 +1174,69 @@ func collectRepoFiles(repoRoot string) []string {
 	})
 	sort.Strings(out)
 	return out
+}
+
+func listPathSuggestions(query string, files []string) []string {
+	baseDir := ""
+	partial := ""
+	if strings.HasSuffix(query, "/") {
+		baseDir = strings.TrimSuffix(query, "/")
+		partial = ""
+	} else if idx := strings.LastIndex(query, "/"); idx >= 0 {
+		baseDir = query[:idx]
+		partial = query[idx+1:]
+	} else {
+		partial = query
+	}
+	if baseDir == "." {
+		baseDir = ""
+	}
+
+	type entry struct {
+		name  string
+		isDir bool
+	}
+	entries := map[string]entry{}
+	for _, f := range files {
+		rest := f
+		if baseDir != "" {
+			prefix := baseDir + "/"
+			if !strings.HasPrefix(f, prefix) {
+				continue
+			}
+			rest = strings.TrimPrefix(f, prefix)
+		}
+		if rest == "" {
+			continue
+		}
+		parts := strings.SplitN(rest, "/", 2)
+		child := parts[0]
+		if child == "" || !strings.HasPrefix(child, partial) {
+			continue
+		}
+		isDir := len(parts) > 1
+		existing, ok := entries[child]
+		if !ok || isDir {
+			entries[child] = entry{name: child, isDir: existing.isDir || isDir}
+		}
+	}
+
+	dirs := make([]string, 0, len(entries))
+	regular := make([]string, 0, len(entries))
+	for _, e := range entries {
+		full := e.name
+		if baseDir != "" {
+			full = baseDir + "/" + full
+		}
+		if e.isDir {
+			dirs = append(dirs, full+"/")
+		} else {
+			regular = append(regular, full)
+		}
+	}
+	sort.Strings(dirs)
+	sort.Strings(regular)
+	return append(dirs, regular...)
 }
 
 func bestPathCompletion(prefix string, candidates []string) (string, bool) {
