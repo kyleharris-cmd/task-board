@@ -36,6 +36,18 @@ type statusOpMsg struct {
 	err    error
 }
 
+type statusEditorDoneMsg struct {
+	err error
+}
+
+type pendingEditSession struct {
+	taskID       string
+	shortRef     string
+	artifactType domain.ArtifactType
+	tmpPath      string
+	cleanup      func()
+}
+
 type statusRow struct {
 	TaskID      string
 	ShortRef    string
@@ -68,6 +80,7 @@ type statusModel struct {
 	commandMode   bool
 	commandInput  textinput.Model
 	helpMode      bool
+	pendingEdit   *pendingEditSession
 }
 
 func newStatusModel(svc *app.Service, actor domain.Actor, editable bool) statusModel {
@@ -143,6 +156,44 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.errText = ""
 		m.status = msg.status
 		return m, loadStatusCmd(m.svc)
+	case statusEditorDoneMsg:
+		if m.pendingEdit == nil {
+			return m, nil
+		}
+		session := m.pendingEdit
+		m.pendingEdit = nil
+		if session.cleanup != nil {
+			session.cleanup()
+		}
+		if msg.err != nil {
+			m.errText = msg.err.Error()
+			m.status = "Edit failed"
+			return m, nil
+		}
+
+		content, readErr := readEditedContent(session.tmpPath)
+		if readErr != nil {
+			m.errText = readErr.Error()
+			m.status = "Edit failed"
+			return m, nil
+		}
+		if strings.TrimSpace(content) == "" {
+			m.errText = "content was empty"
+			m.status = "Edit canceled"
+			return m, nil
+		}
+		if _, _, addErr := m.svc.AddArtifact(context.Background(), session.taskID, session.artifactType, content, m.actor); addErr != nil {
+			m.errText = addErr.Error()
+			m.status = "Edit failed"
+			return m, nil
+		}
+		ref := session.shortRef
+		if ref == "" {
+			ref = session.taskID
+		}
+		m.errText = ""
+		m.status = fmt.Sprintf("updated %s for %s", session.artifactType, ref)
+		return m, loadStatusCmd(m.svc)
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "?":
@@ -210,6 +261,58 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.commandInput.Blur()
 			if cmdText == "" {
 				return m, nil
+			}
+			verb, arg, parseErr := parseStatusCommand(cmdText)
+			if parseErr != nil {
+				return m, func() tea.Msg {
+					return statusOpMsg{status: "Invalid command", err: parseErr}
+				}
+			}
+			if verb == "edit" || verb == "e" {
+				idx, convErr := strconv.Atoi(arg)
+				if convErr != nil || idx < 1 || idx > len(m.visible) {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Invalid command", err: fmt.Errorf("row index out of range")}
+					}
+				}
+				row := m.visible[idx-1]
+				artifactType := domain.ArtifactDesign
+				if row.ParentID == nil && row.HasChildren {
+					artifactType = domain.ArtifactParentDesign
+				} else if row.ParentID != nil {
+					artifactType = domain.ArtifactChildDesign
+				}
+
+				initial := ""
+				if snap, ok, lookupErr := m.svc.GetLatestArtifact(context.Background(), row.TaskID, artifactType); lookupErr == nil && ok {
+					initial = snap.ContentSnapshot
+				} else if lookupErr != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Edit failed", err: lookupErr}
+					}
+				}
+				if strings.TrimSpace(initial) == "" {
+					initial = fmt.Sprintf("# %s\n\n", artifactType)
+				}
+
+				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
+				if prepErr != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Edit failed", err: prepErr}
+					}
+				}
+				m.pendingEdit = &pendingEditSession{
+					taskID:       row.TaskID,
+					shortRef:     row.ShortRef,
+					artifactType: artifactType,
+					tmpPath:      tmpPath,
+					cleanup:      cleanup,
+				}
+				m.status = "Editing..."
+				m.errText = ""
+				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+					return statusEditorDoneMsg{err: err}
+				})
 			}
 			return m, runStatusCommand(m.svc, m.visible, m.cursor, m.actor, cmdText)
 		}
