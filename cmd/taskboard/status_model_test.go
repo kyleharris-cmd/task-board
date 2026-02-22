@@ -38,9 +38,6 @@ func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 	if _, _, err := parseStatusCommand(`cp"Task"`); err == nil {
 		t.Fatalf("expected cp without separating space to fail")
 	}
-	if _, _, err := parseStatusCommand(`cc"Task"`); err == nil {
-		t.Fatalf("expected cc without separating space to fail")
-	}
 
 	verb, arg, err := parseStatusCommand(`cp "Task"`)
 	if err != nil {
@@ -48,5 +45,21 @@ func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 	}
 	if verb != "cp" || arg != "Task" {
 		t.Fatalf("parseStatusCommand(cp) = (%q, %q), want (cp, Task)", verb, arg)
+	}
+
+	verb, arg, err = parseStatusCommand(`cc`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(cc) unexpected error: %v", err)
+	}
+	if verb != "cc" || arg != "" {
+		t.Fatalf("parseStatusCommand(cc) = (%q, %q), want (cc, \"\")", verb, arg)
+	}
+
+	verb, arg, err = parseStatusCommand(`cc child title`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(cc child title) unexpected error: %v", err)
+	}
+	if verb != "cc" || arg != "child title" {
+		t.Fatalf("parseStatusCommand(cc child title) = (%q, %q), want (cc, child title)", verb, arg)
 	}
 }
