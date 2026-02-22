@@ -57,6 +57,13 @@ func (p Policy) Validate() error {
 }
 
 func (p Policy) CanTransition(actorType domain.ActorType, from, to domain.State) bool {
+	if from == to {
+		return false
+	}
+	if actorType == domain.ActorTypeHuman {
+		return true
+	}
+
 	for _, rule := range p.Transitions {
 		if rule.From != from || rule.To != to {
 			continue
