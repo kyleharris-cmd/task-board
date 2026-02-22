@@ -40,6 +40,8 @@ tb init
 tb stat
 ```
 
+`tb stat` is the first-class interface for humans. Use it as your primary day-to-day task workflow UI.
+
 ## Quick Start (In Any Target Repo)
 
 ```bash
@@ -48,7 +50,11 @@ tb init
 tb status
 ```
 
+For human usage, prefer `tb stat`/`tb status` over individual subcommands.
+
 ## Current Commands
+
+Most commands below are useful for scripting, automation, or agent integrations. Human users should primarily work from `tb stat`.
 
 - `taskboard init --repo-root <path>`
 - `taskboard policy validate --file <path>`
@@ -124,6 +130,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 ## Status Board
 
 - Run `tb status` (or `tb stat`) to open a git-log style modal board.
+- This is the primary, first-class human interface for interacting with tasks.
 - Parent/child tasks render as a tree with status icon + checkbox + owner + lease + state.
 - Auto-refreshes every 5 seconds for async monitoring.
 - Shows agent-active work via `active[AGENT]` lease marker.
