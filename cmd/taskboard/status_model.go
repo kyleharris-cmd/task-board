@@ -330,7 +330,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 	}
 	if m.editable {
 		lines = append(lines,
-			":(e)dit <row>   (examples: :e 1, :edit 1)",
+			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
 			":cp \"task name\"  create parent task",
 			":cc \"task name\"  create child task in selected parent context",
 		)
@@ -655,6 +655,22 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 	if cmdText == "" {
 		return "", "", fmt.Errorf("empty command")
 	}
+	cmdText = strings.TrimPrefix(cmdText, ":")
+	if cmdText == "" {
+		return "", "", fmt.Errorf("empty command")
+	}
+
+	lower := strings.ToLower(cmdText)
+	for _, prefix := range []string{"edit", "e"} {
+		if strings.HasPrefix(lower, prefix) {
+			arg := strings.TrimSpace(cmdText[len(prefix):])
+			if arg == "" {
+				return "", "", fmt.Errorf("expected format: (e)dit <row-number>")
+			}
+			return prefix, arg, nil
+		}
+	}
+
 	parts := strings.Fields(cmdText)
 	if len(parts) < 2 {
 		return "", "", fmt.Errorf("expected command and argument")
@@ -667,6 +683,9 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 		}
 		return verb, parts[1], nil
 	case "cp", "cc":
+		if len(parts) < 2 {
+			return "", "", fmt.Errorf("expected format: %s \"task name\"", verb)
+		}
 		title := strings.TrimSpace(cmdText[len(parts[0]):])
 		if strings.HasPrefix(title, "\"") && strings.HasSuffix(title, "\"") && len(title) >= 2 {
 			title = title[1 : len(title)-1]

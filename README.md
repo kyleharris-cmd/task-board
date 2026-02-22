@@ -130,7 +130,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 - `tb stat` is editable by default for human workflow.
 - Use `tb stat --read-only` when you only want monitoring with no in-panel writes.
 - Command mode shortcuts:
-- `:(e)dit <row-number>`: edit the selected row's primary design artifact.
+- `:(e)dit <row-number>`: edit the selected row's primary design artifact (`:e1` and `:edit1` are supported).
 - `:cp "task name"`: create parent task from status board.
 - `:cc "task name"`: create child task under current row parent context.
 
