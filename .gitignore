@@ -1,3 +1,4 @@
 .taskboard/
 bin/
 *.db
+AGENTS.md
