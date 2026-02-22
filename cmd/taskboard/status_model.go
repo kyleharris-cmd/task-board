@@ -46,6 +46,7 @@ type statusRow struct {
 	State       domain.State
 	UpdatedAt   time.Time
 	LeaseOwner  string
+	LeaseActor  domain.ActorType
 	LeaseActive bool
 	AgentActive bool
 }
@@ -254,12 +255,12 @@ func (m statusModel) renderHeader() string {
 	if m.filter == filterAgentActive {
 		filterText = "agent-active"
 	}
-	line := fmt.Sprintf("Task Status  |  filter=%s  |  active-agents=%d  |  refreshed=%s", filterText, activeAgents, m.lastRefreshed.Format("15:04:05"))
+	line := fmt.Sprintf("Task Status  |  filter=%s  |  active-agents=%d  |  checkout(🔒H human, 🔒A agent)  |  refreshed=%s", filterText, activeAgents, m.lastRefreshed.Format("15:04:05"))
 	return lipgloss.NewStyle().Bold(true).Padding(0, 1).Render(line)
 }
 
 func (m statusModel) renderTable() string {
-	head := fmt.Sprintf("%-3s %-2s %-2s %-8s %-44s %-20s %-12s %-22s %-8s", "#", "S", "[]", "Ref", "Task", "Owner", "Lease", "State", "Updated")
+	head := fmt.Sprintf("%-3s %-2s %-3s %-2s %-8s %-42s %-20s %-12s %-22s %-8s", "#", "S", "CO", "[]", "Ref", "Task", "Owner", "Lease", "State", "Updated")
 	lines := []string{lipgloss.NewStyle().Bold(true).Render(head)}
 
 	if len(m.visible) == 0 {
@@ -275,13 +276,14 @@ func (m statusModel) renderTable() string {
 			if ref == "" {
 				ref = row.TaskID
 			}
-			line := fmt.Sprintf("%s%-3d %-2s %-2s %-8s %-44s %-20s %-12s %-22s %-8s",
+			line := fmt.Sprintf("%s%-3d %-2s %-3s %-2s %-8s %-42s %-20s %-12s %-22s %-8s",
 				prefix,
 				i+1,
 				statusIcon(row.State),
+				checkoutIcon(row),
 				doneBox(row.State),
 				truncate(ref, 8),
-				truncate(treeLabel, 44),
+				truncate(treeLabel, 42),
 				truncate(row.LeaseOwner, 20),
 				leaseText(row),
 				truncate(string(row.State), 22),
@@ -459,9 +461,11 @@ func buildStatusRows(statuses []app.TaskStatus) []statusRow {
 
 func statusFromTaskStatus(s app.TaskStatus, depth int, hasChildren bool) statusRow {
 	owner := "-"
+	leaseActor := domain.ActorType("")
 	agentActive := false
 	if s.Lease != nil {
 		owner = string(s.Lease.ActorType) + ":" + s.Lease.ActorID
+		leaseActor = s.Lease.ActorType
 		agentActive = s.LeaseActive && s.Lease.ActorType == domain.ActorTypeAgent
 	}
 	return statusRow{
@@ -474,6 +478,7 @@ func statusFromTaskStatus(s app.TaskStatus, depth int, hasChildren bool) statusR
 		State:       s.Task.State,
 		UpdatedAt:   s.Task.UpdatedAt,
 		LeaseOwner:  owner,
+		LeaseActor:  leaseActor,
 		LeaseActive: s.LeaseActive,
 		AgentActive: agentActive,
 	}
@@ -497,6 +502,23 @@ func doneBox(state domain.State) string {
 		return "☑"
 	}
 	return "☐"
+}
+
+func checkoutIcon(row statusRow) string {
+	if row.LeaseOwner == "-" {
+		return "-"
+	}
+	actor := "?"
+	switch row.LeaseActor {
+	case domain.ActorTypeHuman:
+		actor = "H"
+	case domain.ActorTypeAgent:
+		actor = "A"
+	}
+	if row.LeaseActive {
+		return "🔒" + actor
+	}
+	return "⏳" + actor
 }
 
 func leaseText(row statusRow) string {
