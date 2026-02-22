@@ -45,6 +45,7 @@ type pendingEditorMode int
 const (
 	pendingEditorModeEdit pendingEditorMode = iota
 	pendingEditorModeCreateChild
+	pendingEditorModeCreateParent
 )
 
 type pendingEditSession struct {
@@ -232,6 +233,44 @@ func (m statusModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.errText = ""
 			m.status = fmt.Sprintf("created child %s (%s)", ref, title)
 			return m, loadStatusCmd(m.svc)
+		case pendingEditorModeCreateParent:
+			title, body, parseErr := parseTitleAndBody(content)
+			if parseErr != nil {
+				m.errText = parseErr.Error()
+				m.status = "Create parent failed"
+				return m, nil
+			}
+			parentID, createErr := m.svc.CreateTask(context.Background(), app.CreateTaskInput{
+				Title:       title,
+				Description: body,
+				TaskType:    "design",
+				Priority:    2,
+			})
+			if createErr != nil {
+				m.errText = createErr.Error()
+				m.status = "Create parent failed"
+				return m, nil
+			}
+			if strings.TrimSpace(body) != "" {
+				if _, _, addErr := m.svc.AddArtifact(context.Background(), parentID, domain.ArtifactParentDesign, body, m.actor); addErr != nil {
+					m.errText = addErr.Error()
+					m.status = "Create parent failed"
+					return m, nil
+				}
+			}
+			task, lookupErr := m.svc.GetTask(context.Background(), parentID)
+			if lookupErr != nil {
+				m.errText = lookupErr.Error()
+				m.status = "Create parent failed"
+				return m, nil
+			}
+			ref := task.ShortRef
+			if ref == "" {
+				ref = task.ID
+			}
+			m.errText = ""
+			m.status = fmt.Sprintf("created parent %s (%s)", ref, title)
+			return m, loadStatusCmd(m.svc)
 		default:
 			if _, _, addErr := m.svc.AddArtifact(context.Background(), session.taskID, session.artifactType, content, m.actor); addErr != nil {
 				m.errText = addErr.Error()
@@ -405,6 +444,28 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return statusEditorDoneMsg{err: err}
 				})
 			}
+			if verb == "cp" {
+				initial := "Title: \n\n"
+				if strings.TrimSpace(arg) != "" {
+					initial = "Title: " + strings.TrimSpace(arg) + "\n\n"
+				}
+				editorCmd, tmpPath, cleanup, prepErr := prepareEditorProcess(initial)
+				if prepErr != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Create parent failed", err: prepErr}
+					}
+				}
+				m.pendingEdit = &pendingEditSession{
+					mode:    pendingEditorModeCreateParent,
+					tmpPath: tmpPath,
+					cleanup: cleanup,
+				}
+				m.status = "Creating parent..."
+				m.errText = ""
+				return m, tea.ExecProcess(editorCmd, func(err error) tea.Msg {
+					return statusEditorDoneMsg{err: err}
+				})
+			}
 			return m, runStatusCommand(m.svc, m.visible, m.cursor, m.actor, cmdText)
 		}
 	}
@@ -525,7 +586,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 	if m.editable {
 		lines = append(lines,
 			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
-			":cp \"task name\"  create parent task",
+			":cp [optional title]  create parent from editor (line 1: Title: ..., rest=content)",
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
 		)
 	} else {
@@ -883,18 +944,11 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 		}
 		return verb, strings.TrimSpace(title), nil
 	case "cp":
-		if len(parts) < 2 {
-			return "", "", fmt.Errorf("expected format: cp \"task name\"")
-		}
 		title := strings.TrimSpace(cmdText[len(parts[0]):])
 		if strings.HasPrefix(title, "\"") && strings.HasSuffix(title, "\"") && len(title) >= 2 {
 			title = title[1 : len(title)-1]
 		}
-		title = strings.TrimSpace(title)
-		if title == "" {
-			return "", "", fmt.Errorf("task name cannot be empty")
-		}
-		return verb, title, nil
+		return verb, strings.TrimSpace(title), nil
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
 	}

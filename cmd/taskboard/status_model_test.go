@@ -35,11 +35,15 @@ func TestParseStatusCommand_EditSupportsCompactAndSpaced(t *testing.T) {
 func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 	t.Parallel()
 
-	if _, _, err := parseStatusCommand(`cp"Task"`); err == nil {
-		t.Fatalf("expected cp without separating space to fail")
+	verb, arg, err := parseStatusCommand(`cp`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(cp) unexpected error: %v", err)
+	}
+	if verb != "cp" || arg != "" {
+		t.Fatalf("parseStatusCommand(cp) = (%q, %q), want (cp, \"\")", verb, arg)
 	}
 
-	verb, arg, err := parseStatusCommand(`cp "Task"`)
+	verb, arg, err = parseStatusCommand(`cp "Task"`)
 	if err != nil {
 		t.Fatalf("parseStatusCommand(cp) unexpected error: %v", err)
 	}
