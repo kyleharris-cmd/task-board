@@ -916,7 +916,8 @@ func (m statusModel) renderHeader() string {
 }
 
 func (m statusModel) renderTable() string {
-	head := fmt.Sprintf("%-3s %-2s %-3s %-2s %-8s %-42s %-20s %-12s %-22s %-8s", "#", "S", "CO", "[]", "Ref", "Task", "Owner", "Lease", "State", "Updated")
+	const tableFmt = "%-3s %-2s %-3s %-2s %-8s %-42s %-20s %-12s %-22s %-8s"
+	head := fmt.Sprintf("  "+tableFmt, "#", "S", "CO", "[]", "Ref", "Task", "Owner", "Lease", "State", "Updated")
 	lines := []string{lipgloss.NewStyle().Bold(true).Render(head)}
 
 	if len(m.visible) == 0 {
@@ -932,9 +933,9 @@ func (m statusModel) renderTable() string {
 			if ref == "" {
 				ref = row.TaskID
 			}
-			line := fmt.Sprintf("%s%-3d %-2s %-3s %-2s %-8s %-42s %-20s %-12s %-22s %-8s",
+			line := fmt.Sprintf("%s"+tableFmt,
 				prefix,
-				i+1,
+				fmt.Sprintf("%d", i+1),
 				statusIcon(row.State),
 				checkoutIcon(row),
 				doneBox(row.State),
