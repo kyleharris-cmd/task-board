@@ -4,11 +4,11 @@ This repository uses taskboard for human + agent delivery workflow.
 
 ## Core Loop
 
-1. `tb start <task-id>`: claim task + add context + move to Context Added.
-2. `tb design <task-id>`: add design details + move to Design Drafted.
-3. `tb review <task-id>`: add rubric notes + evaluate + ready-check.
+1. `tb start <task-id>`: claim task + add context + move to Scoping.
+2. `tb design <task-id>`: add design details + move to Design.
+3. `tb review <task-id>`: add rubric notes + evaluate + in-progress readiness check.
 4. `tb implement <task-id>`: claim/renew + move to In Progress.
-5. `tb finish <task-id>`: add implementation/test/docs artifacts + move to Done.
+5. `tb finish <task-id>`: add implementation/test/docs artifacts + move through PR to Complete.
 
 ## Parent / Child
 

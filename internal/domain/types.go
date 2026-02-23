@@ -9,27 +9,30 @@ import (
 type State string
 
 const (
-	StateBacklog                State = "Backlog"
-	StateContextAdded           State = "Context Added"
-	StateDesignDrafted          State = "Design Drafted"
-	StateRubricReview           State = "Rubric Review"
-	StateReadyForImplementation State = "Ready for Implementation"
-	StateInProgress             State = "In Progress"
-	StateTesting                State = "Testing"
-	StateDocumented             State = "Documented"
-	StateDone                   State = "Done"
+	// Canonical workflow states.
+	StateScoping    State = "Scoping"
+	StateDesign     State = "Design"
+	StateInProgress State = "In Progress"
+	StatePR         State = "PR"
+	StateComplete   State = "Complete"
+
+	// Legacy aliases retained for backward compatibility with existing DB/policies.
+	StateBacklog                State = StateScoping
+	StateContextAdded           State = StateScoping
+	StateDesignDrafted          State = StateDesign
+	StateRubricReview           State = StateDesign
+	StateReadyForImplementation State = StateDesign
+	StateTesting                State = StatePR
+	StateDocumented             State = StatePR
+	StateDone                   State = StateComplete
 )
 
 var AllStates = []State{
-	StateBacklog,
-	StateContextAdded,
-	StateDesignDrafted,
-	StateRubricReview,
-	StateReadyForImplementation,
+	StateScoping,
+	StateDesign,
 	StateInProgress,
-	StateTesting,
-	StateDocumented,
-	StateDone,
+	StatePR,
+	StateComplete,
 }
 
 func ParseState(raw string) (State, error) {
@@ -38,6 +41,16 @@ func ParseState(raw string) (State, error) {
 		if strings.EqualFold(norm, string(s)) {
 			return s, nil
 		}
+	}
+	switch strings.ToLower(norm) {
+	case "backlog", "context added", "context-added", "context_added":
+		return StateScoping, nil
+	case "design drafted", "design-drafted", "design_drafted", "rubric review", "rubric-review", "rubric_review", "ready for implementation", "ready-for-implementation", "ready_for_implementation":
+		return StateDesign, nil
+	case "testing", "documented", "docs":
+		return StatePR, nil
+	case "done":
+		return StateComplete, nil
 	}
 	return "", fmt.Errorf("invalid state %q", raw)
 }

@@ -14,18 +14,18 @@ func TestLoad_ValidPolicy(t *testing.T) {
 
 	dir := t.TempDir()
 	path := filepath.Join(dir, "policy.yaml")
-	content := []byte(`version: 1
+content := []byte(`version: 1
 lease_required_states:
   - "In Progress"
 lease_required_by_actor:
   agent: ["In Progress"]
   human: []
 transitions:
-  - from: "Backlog"
-    to: "Context Added"
+  - from: "Scoping"
+    to: "Design"
     actor_types: ["human", "agent"]
 required_artifacts_by_state:
-  "Context Added": ["context"]
+  "Scoping": ["context"]
 task_type_leases:
   default:
     default_ttl_minutes: 60
@@ -35,10 +35,10 @@ task_type_leases:
 
 	p, err := Load(path)
 	require.NoError(t, err)
-	require.True(t, p.CanTransition(domain.ActorTypeHuman, domain.StateBacklog, domain.StateContextAdded))
-	require.True(t, p.CanTransition(domain.ActorTypeHuman, domain.StateBacklog, domain.StateDone))
-	require.False(t, p.CanTransition(domain.ActorTypeHuman, domain.StateBacklog, domain.StateBacklog))
-	require.False(t, p.CanTransition(domain.ActorTypeAgent, domain.StateBacklog, domain.StateDone))
+	require.True(t, p.CanTransition(domain.ActorTypeHuman, domain.StateScoping, domain.StateDesign))
+	require.True(t, p.CanTransition(domain.ActorTypeHuman, domain.StateScoping, domain.StateComplete))
+	require.False(t, p.CanTransition(domain.ActorTypeHuman, domain.StateScoping, domain.StateScoping))
+	require.False(t, p.CanTransition(domain.ActorTypeAgent, domain.StateScoping, domain.StateComplete))
 	require.True(t, p.RequiresLeaseForState(domain.StateInProgress))
 	require.True(t, p.RequiresLeaseForStateAndActor(domain.ActorTypeAgent, domain.StateInProgress))
 	require.False(t, p.RequiresLeaseForStateAndActor(domain.ActorTypeHuman, domain.StateInProgress))
@@ -66,7 +66,7 @@ func TestRequiresLeaseForStateAndActor_FallbackLegacyStates(t *testing.T) {
 		Version:             1,
 		LeaseRequiredStates: []domain.State{domain.StateInProgress},
 		Transitions: []TransitionRule{
-			{From: domain.StateBacklog, To: domain.StateContextAdded, ActorTypes: []domain.ActorType{domain.ActorTypeHuman}},
+			{From: domain.StateScoping, To: domain.StateDesign, ActorTypes: []domain.ActorType{domain.ActorTypeHuman}},
 		},
 		TaskTypeLeases: map[string]LeaseRule{
 			"default": {DefaultTTLMinutes: 60, AllowAutoRenew: true},

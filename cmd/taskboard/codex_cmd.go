@@ -28,7 +28,8 @@ type codexSnapshot struct {
 	RepoRoot        string          `json:"repo_root"`
 	GeneratedAt     string          `json:"generated_at"`
 	ActiveCheckouts []codexTaskView `json:"active_checkouts"`
-	ReadyForImpl    []codexTaskView `json:"ready_for_implementation"`
+	DesignQueue     []codexTaskView `json:"design_queue"`
+	ReadyForImpl    []codexTaskView `json:"ready_for_implementation,omitempty"`
 }
 
 func newCodexCmd(repoRoot *string) *cobra.Command {
@@ -78,28 +79,29 @@ func buildCodexSnapshot(repoRoot string, statuses []app.TaskStatus) codexSnapsho
 	}
 
 	active := make([]app.TaskStatus, 0)
-	ready := make([]app.TaskStatus, 0)
+	designQueue := make([]app.TaskStatus, 0)
 	for _, s := range statuses {
 		if s.LeaseActive {
 			active = append(active, s)
 		}
-		if s.Task.State == domain.StateReadyForImplementation {
-			ready = append(ready, s)
+		if s.Task.State == domain.StateDesign {
+			designQueue = append(designQueue, s)
 		}
 	}
 
 	sort.Slice(active, func(i, j int) bool {
 		return active[i].Task.UpdatedAt.After(active[j].Task.UpdatedAt)
 	})
-	sort.Slice(ready, func(i, j int) bool {
-		return ready[i].Task.UpdatedAt.After(ready[j].Task.UpdatedAt)
+	sort.Slice(designQueue, func(i, j int) bool {
+		return designQueue[i].Task.UpdatedAt.After(designQueue[j].Task.UpdatedAt)
 	})
 
 	return codexSnapshot{
 		RepoRoot:        repoRoot,
 		GeneratedAt:     time.Now().UTC().Format(time.RFC3339),
 		ActiveCheckouts: mapCodexTasks(active, refByID),
-		ReadyForImpl:    mapCodexTasks(ready, refByID),
+		DesignQueue:     mapCodexTasks(designQueue, refByID),
+		ReadyForImpl:    mapCodexTasks(designQueue, refByID),
 	}
 }
 
@@ -153,11 +155,11 @@ func renderCodexSnapshot(cmd *cobra.Command, snap codexSnapshot) {
 	}
 	cmd.Println()
 
-	cmd.Printf("Ready for Implementation (%d)\n", len(snap.ReadyForImpl))
-	if len(snap.ReadyForImpl) == 0 {
+	cmd.Printf("Design Queue (%d)\n", len(snap.DesignQueue))
+	if len(snap.DesignQueue) == 0 {
 		cmd.Println("- none")
 	} else {
-		for _, t := range snap.ReadyForImpl {
+		for _, t := range snap.DesignQueue {
 			parent := ""
 			if t.ParentRef != "" {
 				parent = fmt.Sprintf(" parent=%s", t.ParentRef)

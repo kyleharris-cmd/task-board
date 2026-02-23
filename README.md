@@ -53,6 +53,14 @@ Rule of thumb:
 - Humans should primarily work in `tb stat`.
 - Agents and scripts should primarily use non-interactive CLI or API calls.
 
+Canonical workflow states:
+
+1. `Scoping`
+2. `Design`
+3. `In Progress`
+4. `PR`
+5. `Complete`
+
 ## Quick Start (In Any Target Repo)
 
 ```bash
@@ -131,7 +139,7 @@ Most commands below are useful for scripting, automation, or agent integrations.
 - `taskboard policy validate --file <path>`
 - `taskboard policy migrate --file <path> [--dry-run]`
 - `taskboard task create --title ... [--parent-id ...]`
-- `taskboard task list [--state "Backlog"]`
+- `taskboard task list [--state "Scoping"]`
 - `taskboard task claim --id ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard task renew --id ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard task release --id ... --actor-type ... --actor-id ... --actor-name ...`
@@ -171,7 +179,7 @@ All mutating endpoints take a structured actor payload (`type`, `id`, `display_n
 ## Codex Session Access
 
 - `tb init` now ensures `AGENTS.md` exists and includes the taskboard protocol snippet.
-- Use `tb codex` for a quick non-interactive snapshot (active checkouts + ready-for-implementation tasks).
+- Use `tb codex` for a quick non-interactive snapshot (active checkouts + design-queue tasks).
 - Use `tb codex --json` for machine-readable output in agent sessions.
 
 ## Task References

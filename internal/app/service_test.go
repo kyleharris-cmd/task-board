@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestService_TaskWorkflowToReady(t *testing.T) {
+func TestService_TaskWorkflowToInProgress(t *testing.T) {
 	t.Parallel()
 
 	repoRoot := t.TempDir()
@@ -41,19 +41,17 @@ func TestService_TaskWorkflowToReady(t *testing.T) {
 
 	_, _, err = svc.AddArtifact(ctx, taskID, domain.ArtifactContext, "context", actor)
 	require.NoError(t, err)
-	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateContextAdded, Actor: actor}))
 
 	_, _, err = svc.AddArtifact(ctx, taskID, domain.ArtifactDesign, "design", actor)
 	require.NoError(t, err)
-	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateDesignDrafted, Actor: actor}))
-	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateRubricReview, Actor: actor}))
+	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateDesign, Actor: actor}))
 
 	_, _, err = svc.AddArtifact(ctx, taskID, domain.ArtifactRubricReview, "rubric review", actor)
 	require.NoError(t, err)
 	require.NoError(t, svc.EvaluateRubric(ctx, taskID, "v1", true, true, "ok", actor))
 
 	require.NoError(t, svc.ReadyCheck(ctx, taskID, actor))
-	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateReadyForImplementation, Actor: actor}))
+	require.NoError(t, svc.TransitionTask(ctx, TransitionInput{TaskID: taskID, ToState: domain.StateInProgress, Actor: actor}))
 }
 
 func TestService_ClaimDeniedWhenActiveLeaseOwnedByDifferentActor(t *testing.T) {
@@ -91,46 +89,29 @@ func TestService_ClaimDeniedWhenActiveLeaseOwnedByDifferentActor(t *testing.T) {
 
 const testPolicyYAML = `version: 1
 lease_required_states:
-  - "Context Added"
-  - "Design Drafted"
-  - "Rubric Review"
-  - "Ready for Implementation"
+  - "Scoping"
+  - "Design"
   - "In Progress"
-  - "Testing"
-  - "Documented"
+  - "PR"
 transitions:
-  - from: "Backlog"
-    to: "Context Added"
+  - from: "Scoping"
+    to: "Design"
     actor_types: ["human", "agent"]
-  - from: "Context Added"
-    to: "Design Drafted"
-    actor_types: ["human", "agent"]
-  - from: "Design Drafted"
-    to: "Rubric Review"
-    actor_types: ["human", "agent"]
-  - from: "Rubric Review"
-    to: "Ready for Implementation"
-    actor_types: ["human", "agent"]
-  - from: "Ready for Implementation"
+  - from: "Design"
     to: "In Progress"
     actor_types: ["human", "agent"]
   - from: "In Progress"
-    to: "Testing"
+    to: "PR"
     actor_types: ["human", "agent"]
-  - from: "Testing"
-    to: "Documented"
-    actor_types: ["human", "agent"]
-  - from: "Documented"
-    to: "Done"
+  - from: "PR"
+    to: "Complete"
     actor_types: ["human", "agent"]
 required_artifacts_by_state:
-  "Context Added": ["context"]
-  "Design Drafted": ["context", "design"]
-  "Rubric Review": ["context", "design"]
-  "Ready for Implementation": ["context", "design", "rubric_review"]
-  "Testing": ["implementation_notes", "test_report"]
-  "Documented": ["implementation_notes", "test_report", "docs_update"]
-  "Done": ["implementation_notes", "test_report", "docs_update"]
+  "Scoping": ["context"]
+  "Design": ["context", "design"]
+  "In Progress": ["context", "design", "rubric_review"]
+  "PR": ["implementation_notes", "test_report", "docs_update"]
+  "Complete": ["implementation_notes", "test_report", "docs_update"]
 task_type_leases:
   default:
     default_ttl_minutes: 60

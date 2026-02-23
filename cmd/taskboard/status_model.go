@@ -1220,11 +1220,11 @@ func statusFromTaskStatus(s app.TaskStatus, depth int, hasChildren bool) statusR
 
 func statusIcon(state domain.State) string {
 	switch state {
-	case domain.StateDone:
+	case domain.StateComplete:
 		return "✓"
-	case domain.StateInProgress, domain.StateTesting, domain.StateDocumented:
+	case domain.StateInProgress, domain.StatePR:
 		return "◔"
-	case domain.StateReadyForImplementation:
+	case domain.StateDesign:
 		return "⚑"
 	default:
 		return "○"
@@ -1232,7 +1232,7 @@ func statusIcon(state domain.State) string {
 }
 
 func doneBox(state domain.State) string {
-	if state == domain.StateDone {
+	if state == domain.StateComplete {
 		return "☑"
 	}
 	return "☐"
@@ -1471,24 +1471,16 @@ func parseTitleAndBody(content string) (string, string, error) {
 func parseStateCommandArg(raw string) (domain.State, error) {
 	s := strings.ToLower(strings.TrimSpace(raw))
 	switch s {
-	case "backlog":
-		return domain.StateBacklog, nil
-	case "context", "context-added", "context_added":
-		return domain.StateContextAdded, nil
-	case "design", "design-drafted", "design_drafted":
-		return domain.StateDesignDrafted, nil
-	case "rubric", "rubric-review", "rubric_review":
-		return domain.StateRubricReview, nil
-	case "ready", "ready-for-implementation", "ready_for_implementation", "rfi":
-		return domain.StateReadyForImplementation, nil
+	case "scoping", "scope", "backlog", "context", "context-added", "context_added":
+		return domain.StateScoping, nil
+	case "design", "design-drafted", "design_drafted", "rubric", "rubric-review", "rubric_review", "ready", "ready-for-implementation", "ready_for_implementation", "rfi":
+		return domain.StateDesign, nil
 	case "progress", "in-progress", "in_progress", "doing":
 		return domain.StateInProgress, nil
-	case "testing", "test":
-		return domain.StateTesting, nil
-	case "documented", "docs":
-		return domain.StateDocumented, nil
-	case "done":
-		return domain.StateDone, nil
+	case "pr", "testing", "test", "documented", "docs":
+		return domain.StatePR, nil
+	case "complete", "completed", "done":
+		return domain.StateComplete, nil
 	default:
 		return domain.ParseState(raw)
 	}

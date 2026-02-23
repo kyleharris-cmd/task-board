@@ -55,29 +55,17 @@ func TestServer_CreateListClaimAndReadyCheck(t *testing.T) {
 	h.ServeHTTP(ctxRec, ctxReq)
 	require.Equal(t, http.StatusOK, ctxRec.Code)
 
-	trans1Body := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"to":"Context Added"}`
-	trans1Req := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/transition", bytes.NewBufferString(trans1Body))
-	trans1Rec := httptest.NewRecorder()
-	h.ServeHTTP(trans1Rec, trans1Req)
-	require.Equal(t, http.StatusOK, trans1Rec.Code)
-
 	designBody := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"type":"design","content":"design"}`
 	designReq := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/artifacts", bytes.NewBufferString(designBody))
 	designRec := httptest.NewRecorder()
 	h.ServeHTTP(designRec, designReq)
 	require.Equal(t, http.StatusOK, designRec.Code)
 
-	trans2Body := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"to":"Design Drafted"}`
+	trans2Body := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"to":"Design"}`
 	trans2Req := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/transition", bytes.NewBufferString(trans2Body))
 	trans2Rec := httptest.NewRecorder()
 	h.ServeHTTP(trans2Rec, trans2Req)
 	require.Equal(t, http.StatusOK, trans2Rec.Code)
-
-	trans3Body := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"to":"Rubric Review"}`
-	trans3Req := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/transition", bytes.NewBufferString(trans3Body))
-	trans3Rec := httptest.NewRecorder()
-	h.ServeHTTP(trans3Rec, trans3Req)
-	require.Equal(t, http.StatusOK, trans3Rec.Code)
 
 	rubricArtifactBody := `{"actor":{"type":"agent","id":"a1","display_name":"Agent 1"},"type":"rubric_review","content":"rr"}`
 	rubricArtifactReq := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/artifacts", bytes.NewBufferString(rubricArtifactBody))
@@ -139,46 +127,29 @@ func newServiceForHTTPTests(t *testing.T, repoRoot string) *app.Service {
 
 const httpPolicyYAML = `version: 1
 lease_required_states:
-  - "Context Added"
-  - "Design Drafted"
-  - "Rubric Review"
-  - "Ready for Implementation"
+  - "Scoping"
+  - "Design"
   - "In Progress"
-  - "Testing"
-  - "Documented"
+  - "PR"
 transitions:
-  - from: "Backlog"
-    to: "Context Added"
+  - from: "Scoping"
+    to: "Design"
     actor_types: ["human", "agent"]
-  - from: "Context Added"
-    to: "Design Drafted"
-    actor_types: ["human", "agent"]
-  - from: "Design Drafted"
-    to: "Rubric Review"
-    actor_types: ["human", "agent"]
-  - from: "Rubric Review"
-    to: "Ready for Implementation"
-    actor_types: ["human", "agent"]
-  - from: "Ready for Implementation"
+  - from: "Design"
     to: "In Progress"
     actor_types: ["human", "agent"]
   - from: "In Progress"
-    to: "Testing"
+    to: "PR"
     actor_types: ["human", "agent"]
-  - from: "Testing"
-    to: "Documented"
-    actor_types: ["human", "agent"]
-  - from: "Documented"
-    to: "Done"
+  - from: "PR"
+    to: "Complete"
     actor_types: ["human", "agent"]
 required_artifacts_by_state:
-  "Context Added": ["context"]
-  "Design Drafted": ["context", "design"]
-  "Rubric Review": ["context", "design"]
-  "Ready for Implementation": ["context", "design", "rubric_review"]
-  "Testing": ["implementation_notes", "test_report"]
-  "Documented": ["implementation_notes", "test_report", "docs_update"]
-  "Done": ["implementation_notes", "test_report", "docs_update"]
+  "Scoping": ["context"]
+  "Design": ["context", "design"]
+  "In Progress": ["context", "design", "rubric_review"]
+  "PR": ["implementation_notes", "test_report", "docs_update"]
+  "Complete": ["implementation_notes", "test_report", "docs_update"]
 task_type_leases:
   default:
     default_ttl_minutes: 60

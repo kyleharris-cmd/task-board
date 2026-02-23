@@ -8,17 +8,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestValidateTransition_ReadyForImplementationRequiresRubric(t *testing.T) {
+func TestValidateTransition_InProgressRequiresRubric(t *testing.T) {
 	t.Parallel()
 
 	p := testPolicy()
 	in := TransitionInput{
 		Task: domain.Task{
-			State:        domain.StateRubricReview,
+			State:        domain.StateDesign,
 			RubricPassed: false,
 		},
 		Actor:            domain.Actor{Type: domain.ActorTypeAgent},
-		ToState:          domain.StateReadyForImplementation,
+		ToState:          domain.StateInProgress,
 		HasValidLease:    true,
 		PresentArtifacts: []domain.ArtifactType{domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 	}
@@ -34,12 +34,12 @@ func TestValidateTransition_ParentRequiresChildrenReady(t *testing.T) {
 	p := testPolicy()
 	in := TransitionInput{
 		Task: domain.Task{
-			State:        domain.StateRubricReview,
+			State:        domain.StateDesign,
 			RubricPassed: true,
 			IsParent:     true,
 		},
 		Actor:               domain.Actor{Type: domain.ActorTypeHuman},
-		ToState:             domain.StateReadyForImplementation,
+		ToState:             domain.StateInProgress,
 		HasValidLease:       true,
 		PresentArtifacts:    []domain.ArtifactType{domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 		ParentChildrenReady: false,
@@ -56,12 +56,12 @@ func TestValidateTransition_SucceedsWhenGatesPass(t *testing.T) {
 	p := testPolicy()
 	in := TransitionInput{
 		Task: domain.Task{
-			State:        domain.StateRubricReview,
+			State:        domain.StateDesign,
 			RubricPassed: true,
 			IsParent:     true,
 		},
 		Actor:               domain.Actor{Type: domain.ActorTypeAgent},
-		ToState:             domain.StateReadyForImplementation,
+		ToState:             domain.StateInProgress,
 		HasValidLease:       true,
 		PresentArtifacts:    []domain.ArtifactType{domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 		ParentChildrenReady: true,
@@ -75,14 +75,14 @@ func testPolicy() policy.Policy {
 	return policy.Policy{
 		Version: 1,
 		Transitions: []policy.TransitionRule{
-			{From: domain.StateRubricReview, To: domain.StateReadyForImplementation, ActorTypes: []domain.ActorType{domain.ActorTypeHuman, domain.ActorTypeAgent}},
+			{From: domain.StateDesign, To: domain.StateInProgress, ActorTypes: []domain.ActorType{domain.ActorTypeHuman, domain.ActorTypeAgent}},
 		},
 		LeaseRequiredByActor: map[domain.ActorType][]domain.State{
-			domain.ActorTypeAgent: {domain.StateReadyForImplementation},
+			domain.ActorTypeAgent: {domain.StateInProgress},
 			domain.ActorTypeHuman: {},
 		},
 		RequiredArtifactsByState: map[domain.State][]domain.ArtifactType{
-			domain.StateReadyForImplementation: {domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
+			domain.StateInProgress: {domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 		},
 		TaskTypeLeases: map[string]policy.LeaseRule{"default": {DefaultTTLMinutes: 60, AllowAutoRenew: true}},
 	}
@@ -94,12 +94,12 @@ func TestValidateTransition_HumanNoLeaseWhenActorPolicyAllows(t *testing.T) {
 	p := testPolicy()
 	in := TransitionInput{
 		Task: domain.Task{
-			State:        domain.StateRubricReview,
+			State:        domain.StateDesign,
 			RubricPassed: true,
 			IsParent:     false,
 		},
 		Actor:               domain.Actor{Type: domain.ActorTypeHuman},
-		ToState:             domain.StateReadyForImplementation,
+		ToState:             domain.StateInProgress,
 		HasValidLease:       false,
 		PresentArtifacts:    []domain.ArtifactType{domain.ArtifactContext, domain.ArtifactDesign, domain.ArtifactRubricReview},
 		ParentChildrenReady: true,

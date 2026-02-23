@@ -33,12 +33,12 @@ func ValidateTransition(p policy.Policy, in TransitionInput) error {
 		}
 	}
 
-	if in.ToState == domain.StateReadyForImplementation {
+	if in.ToState == domain.StateInProgress {
 		if !in.Task.RubricPassed {
-			return fmt.Errorf("task must pass rubric review before entering %q", domain.StateReadyForImplementation)
+			return fmt.Errorf("task must pass rubric review before entering %q", domain.StateInProgress)
 		}
 		if in.Task.IsParent && !in.ParentChildrenReady {
-			return fmt.Errorf("all required child tasks must be rubric-ready before parent can enter %q", domain.StateReadyForImplementation)
+			return fmt.Errorf("all required child tasks must be rubric-ready before parent can enter %q", domain.StateInProgress)
 		}
 	}
 

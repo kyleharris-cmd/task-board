@@ -151,7 +151,7 @@ func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, e
 		RequiredForParent: in.RequiredForParent,
 		Priority:          in.Priority,
 		TaskType:          in.TaskType,
-		State:             domain.StateBacklog,
+		State:             domain.StateScoping,
 		Now:               now,
 	}); err != nil {
 		return "", err
@@ -451,7 +451,7 @@ func (s *Service) ReadyCheck(ctx context.Context, taskID string, actor domain.Ac
 	return workflow.ValidateTransition(s.policy, workflow.TransitionInput{
 		Task:                task,
 		Actor:               actor,
-		ToState:             domain.StateReadyForImplementation,
+		ToState:             domain.StateInProgress,
 		HasValidLease:       exists && lease.ActorID == actor.ID && lease.ActorType == actor.Type && lease.ExpiresAt.After(time.Now().UTC()),
 		PresentArtifacts:    artifacts,
 		ParentChildrenReady: childrenReady,

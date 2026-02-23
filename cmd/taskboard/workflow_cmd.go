@@ -19,7 +19,7 @@ func newStartCmd(repoRoot *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "start <task-id>",
-		Short: "Claim task, add context, and move task to Context Added",
+		Short: "Claim task, add context, and move task to Scoping",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			taskID := args[0]
@@ -45,7 +45,7 @@ func newStartCmd(repoRoot *string) *cobra.Command {
 				if _, _, err := svc.AddArtifact(context.Background(), taskID, domain.ArtifactContext, ctxContent, actor); err != nil {
 					return err
 				}
-				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateContextAdded, Actor: actor, Reason: "start workflow"}); err != nil {
+				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateScoping, Actor: actor, Reason: "start workflow"}); err != nil {
 					return err
 				}
 				cmd.Printf("started task %s\n", taskID)
@@ -68,7 +68,7 @@ func newDesignCmd(repoRoot *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "design <task-id>",
-		Short: "Add design artifact and move task to Design Drafted",
+		Short: "Add design artifact and move task to Design",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			taskID := args[0]
@@ -91,7 +91,7 @@ func newDesignCmd(repoRoot *string) *cobra.Command {
 				if _, _, err := svc.AddArtifact(context.Background(), taskID, domain.ArtifactDesign, designContent, actor); err != nil {
 					return err
 				}
-				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateDesignDrafted, Actor: actor, Reason: "design workflow"}); err != nil {
+				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateDesign, Actor: actor, Reason: "design workflow"}); err != nil {
 					return err
 				}
 				cmd.Printf("designed task %s\n", taskID)
@@ -116,7 +116,7 @@ func newReviewCmd(repoRoot *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "review <task-id>",
-		Short: "Add rubric artifact, evaluate, and run ready-check",
+		Short: "Add rubric artifact, evaluate, and validate readiness for In Progress",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			taskID := args[0]
@@ -149,7 +149,7 @@ func newReviewCmd(repoRoot *string) *cobra.Command {
 				if err := svc.ReadyCheck(context.Background(), taskID, actor); err != nil {
 					return err
 				}
-				cmd.Printf("reviewed task %s (ready-check passed)\n", taskID)
+				cmd.Printf("reviewed task %s (in-progress readiness check passed)\n", taskID)
 				return nil
 			})
 		},
@@ -209,7 +209,7 @@ func newFinishCmd(repoRoot *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "finish <task-id>",
-		Short: "Add implementation/test/docs artifacts and move task to Done",
+		Short: "Add implementation/test/docs artifacts and move task through PR to Complete",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			taskID := args[0]
@@ -242,13 +242,10 @@ func newFinishCmd(repoRoot *string) *cobra.Command {
 					return err
 				}
 
-				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateTesting, Actor: actor, Reason: "finish workflow"}); err != nil {
+				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StatePR, Actor: actor, Reason: "finish workflow"}); err != nil {
 					return err
 				}
-				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateDocumented, Actor: actor, Reason: "finish workflow"}); err != nil {
-					return err
-				}
-				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateDone, Actor: actor, Reason: "finish workflow"}); err != nil {
+				if err := svc.TransitionTask(context.Background(), app.TransitionInput{TaskID: taskID, ToState: domain.StateComplete, Actor: actor, Reason: "finish workflow"}); err != nil {
 					return err
 				}
 

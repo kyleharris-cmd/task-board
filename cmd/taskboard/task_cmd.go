@@ -250,7 +250,7 @@ func newReadyCheckCmd(repoRoot *string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "ready-check",
-		Short: "Validate task gates for Ready for Implementation",
+		Short: "Validate task gates for In Progress",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			actor, err := af.actor()
 			if err != nil {
@@ -261,7 +261,7 @@ func newReadyCheckCmd(repoRoot *string) *cobra.Command {
 				if err != nil {
 					return err
 				}
-				cmd.Printf("task %s is ready for implementation\n", id)
+				cmd.Printf("task %s is ready for In Progress\n", id)
 				return nil
 			})
 		},

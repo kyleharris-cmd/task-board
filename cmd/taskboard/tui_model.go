@@ -360,7 +360,7 @@ func readyCheckCmd(svc *app.Service, taskID string, actor domain.Actor) tea.Cmd 
 		if err := svc.ReadyCheck(context.Background(), taskID, actor); err != nil {
 			return opResultMsg{status: "ready-check failed", err: err}
 		}
-		return opResultMsg{status: fmt.Sprintf("task %s is ready for implementation", taskID)}
+		return opResultMsg{status: fmt.Sprintf("task %s is ready for in progress", taskID)}
 	}
 }
 

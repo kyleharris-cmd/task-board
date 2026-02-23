@@ -160,11 +160,11 @@ func TestParseStateCommandArg(t *testing.T) {
 		in   string
 		want string
 	}{
-		{in: "done", want: "Done"},
-		{in: "ready", want: "Ready for Implementation"},
-		{in: "rfi", want: "Ready for Implementation"},
+		{in: "done", want: "Complete"},
+		{in: "ready", want: "Design"},
+		{in: "rfi", want: "Design"},
 		{in: "in-progress", want: "In Progress"},
-		{in: "context", want: "Context Added"},
+		{in: "context", want: "Scoping"},
 	}
 
 	for _, tc := range cases {
