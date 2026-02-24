@@ -87,6 +87,47 @@ func TestService_ClaimDeniedWhenActiveLeaseOwnedByDifferentActor(t *testing.T) {
 	require.Contains(t, err.Error(), "actively leased")
 }
 
+func TestService_ArchiveAndDeleteTask(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	taskboardDir := filepath.Join(repoRoot, ".taskboard")
+	require.NoError(t, os.MkdirAll(filepath.Join(taskboardDir, "tasks"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(taskboardDir, "policy.yaml"), []byte(testPolicyYAML), 0o644))
+
+	db, err := storage.Open(filepath.Join(taskboardDir, "board.db"))
+	require.NoError(t, err)
+	require.NoError(t, db.Migrate(context.Background()))
+	require.NoError(t, db.UpsertBoard(context.Background(), "default", repoRoot, time.Now().UTC()))
+	require.NoError(t, db.Close())
+
+	svc, err := OpenService(repoRoot)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = svc.Close() })
+
+	ctx := context.Background()
+	taskID, err := svc.CreateTask(ctx, CreateTaskInput{Title: "Archive me", TaskType: "default"})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.ArchiveTask(ctx, taskID))
+
+	activeTasks, err := svc.ListTasks(ctx, nil)
+	require.NoError(t, err)
+	require.Len(t, activeTasks, 0)
+
+	allTasks, err := svc.ListTasksWithArchived(ctx, nil, true)
+	require.NoError(t, err)
+	require.Len(t, allTasks, 1)
+	require.NotNil(t, allTasks[0].ArchivedAt)
+
+	require.Error(t, svc.DeleteTask(ctx, taskID, false))
+	require.NoError(t, svc.DeleteTask(ctx, taskID, true))
+
+	allTasks, err = svc.ListTasksWithArchived(ctx, nil, true)
+	require.NoError(t, err)
+	require.Len(t, allTasks, 0)
+}
+
 const testPolicyYAML = `version: 1
 lease_required_states:
   - "Scoping"

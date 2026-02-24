@@ -163,7 +163,11 @@ func (s *Service) CreateTask(ctx context.Context, in CreateTaskInput) (string, e
 }
 
 func (s *Service) ListTasks(ctx context.Context, state *domain.State) ([]domain.Task, error) {
-	return s.db.ListTasks(ctx, state)
+	return s.db.ListTasks(ctx, state, false)
+}
+
+func (s *Service) ListTasksWithArchived(ctx context.Context, state *domain.State, includeArchived bool) ([]domain.Task, error) {
+	return s.db.ListTasks(ctx, state, includeArchived)
 }
 
 func (s *Service) GetTask(ctx context.Context, taskID string) (domain.Task, error) {
@@ -456,6 +460,50 @@ func (s *Service) ReadyCheck(ctx context.Context, taskID string, actor domain.Ac
 		PresentArtifacts:    artifacts,
 		ParentChildrenReady: childrenReady,
 	})
+}
+
+func (s *Service) ArchiveTask(ctx context.Context, taskID string) error {
+	if s.readOnly {
+		return fmt.Errorf("service is read-only")
+	}
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	if task.ArchivedAt != nil {
+		return fmt.Errorf("task %s is already archived", taskID)
+	}
+	now := time.Now().UTC()
+	if err := s.db.ArchiveTask(ctx, task.ID, now); err != nil {
+		return err
+	}
+	_ = s.db.DeleteLease(ctx, task.ID)
+	return nil
+}
+
+func (s *Service) DeleteTask(ctx context.Context, taskID string, force bool) error {
+	if s.readOnly {
+		return fmt.Errorf("service is read-only")
+	}
+	if !force {
+		return fmt.Errorf("delete is destructive; re-run with --force")
+	}
+	task, err := s.resolveTaskReference(ctx, taskID)
+	if err != nil {
+		return err
+	}
+	hasChildren, err := s.db.HasActiveChildren(ctx, task.ID)
+	if err != nil {
+		return err
+	}
+	if hasChildren {
+		return fmt.Errorf("task %s has child tasks; delete child tasks first", taskID)
+	}
+	if err := s.db.DeleteTaskCascadeRecords(ctx, task.ID); err != nil {
+		return err
+	}
+	_ = os.RemoveAll(filepath.Join(s.taskDir, task.ID))
+	return nil
 }
 
 func newTaskID(now time.Time) string {

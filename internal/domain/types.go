@@ -84,6 +84,7 @@ type Task struct {
 	Title             string
 	Description       string
 	State             State
+	ArchivedAt        *time.Time
 	ParentID          *string
 	TaskType          string
 	Priority          int

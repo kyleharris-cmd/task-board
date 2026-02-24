@@ -144,6 +144,8 @@ Most commands below are useful for scripting, automation, or agent integrations.
 - `taskboard task renew --id ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard task release --id ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard task transition --id ... --to ... --actor-type ... --actor-id ... --actor-name ...`
+- `taskboard task archive --id ...`
+- `taskboard task delete --id ... --force`
 - `taskboard task ready-check --id ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard artifact add --id ... --type ... --content ... --actor-type ... --actor-id ... --actor-name ...`
 - `taskboard rubric evaluate --id ... --pass --required-fields-complete --actor-type ... --actor-id ... --actor-name ...`
@@ -164,15 +166,17 @@ Most commands below are useful for scripting, automation, or agent integrations.
 ## HTTP API (v1)
 
 - `GET /health`
-- `GET /tasks?state=<state>`
+- `GET /tasks?state=<state>&include_archived=1`
 - `POST /tasks`
 - `POST /tasks/{id}/claim`
 - `POST /tasks/{id}/renew`
 - `POST /tasks/{id}/release`
 - `POST /tasks/{id}/transition`
+- `POST /tasks/{id}/archive`
 - `POST /tasks/{id}/artifacts`
 - `POST /tasks/{id}/rubric`
 - `POST /tasks/{id}/ready-check`
+- `DELETE /tasks/{id}?force=1`
 
 All mutating endpoints take a structured actor payload (`type`, `id`, `display_name`).
 

@@ -108,6 +108,51 @@ func TestServer_ClaimConflict(t *testing.T) {
 	require.Equal(t, http.StatusConflict, claimRec.Code)
 }
 
+func TestServer_ArchiveAndDelete(t *testing.T) {
+	t.Parallel()
+
+	repoRoot := t.TempDir()
+	svc := newServiceForHTTPTests(t, repoRoot)
+	t.Cleanup(func() { _ = svc.Close() })
+
+	server := NewServer(svc)
+	h := server.Handler()
+
+	createBody := `{"title":"Delete Me","task_type":"default"}`
+	createReq := httptest.NewRequest(http.MethodPost, "/tasks", bytes.NewBufferString(createBody))
+	createRec := httptest.NewRecorder()
+	h.ServeHTTP(createRec, createReq)
+	require.Equal(t, http.StatusCreated, createRec.Code)
+
+	var createResp map[string]string
+	require.NoError(t, json.Unmarshal(createRec.Body.Bytes(), &createResp))
+	taskID := createResp["task_id"]
+	require.NotEmpty(t, taskID)
+
+	archiveReq := httptest.NewRequest(http.MethodPost, "/tasks/"+taskID+"/archive", bytes.NewBufferString(`{}`))
+	archiveRec := httptest.NewRecorder()
+	h.ServeHTTP(archiveRec, archiveReq)
+	require.Equal(t, http.StatusOK, archiveRec.Code)
+
+	listReq := httptest.NewRequest(http.MethodGet, "/tasks", nil)
+	listRec := httptest.NewRecorder()
+	h.ServeHTTP(listRec, listReq)
+	require.Equal(t, http.StatusOK, listRec.Code)
+	var listResp map[string][]domain.Task
+	require.NoError(t, json.Unmarshal(listRec.Body.Bytes(), &listResp))
+	require.Len(t, listResp["tasks"], 0)
+
+	deleteNoForceReq := httptest.NewRequest(http.MethodDelete, "/tasks/"+taskID, nil)
+	deleteNoForceRec := httptest.NewRecorder()
+	h.ServeHTTP(deleteNoForceRec, deleteNoForceReq)
+	require.Equal(t, http.StatusBadRequest, deleteNoForceRec.Code)
+
+	deleteReq := httptest.NewRequest(http.MethodDelete, "/tasks/"+taskID+"?force=1", nil)
+	deleteRec := httptest.NewRecorder()
+	h.ServeHTTP(deleteRec, deleteReq)
+	require.Equal(t, http.StatusOK, deleteRec.Code)
+}
+
 func newServiceForHTTPTests(t *testing.T, repoRoot string) *app.Service {
 	t.Helper()
 	taskboardDir := filepath.Join(repoRoot, ".taskboard")

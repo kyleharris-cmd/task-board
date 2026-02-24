@@ -38,9 +38,13 @@ FROM tasks t
 LEFT JOIN task_leases l ON l.task_id = t.id
 `
 	args := []any{}
+	where := []string{"t.archived_at IS NULL"}
 	if state != nil {
-		query += " WHERE t.state = ?"
+		where = append(where, "t.state = ?")
 		args = append(args, string(*state))
+	}
+	if len(where) > 0 {
+		query += " WHERE " + strings.Join(where, " AND ")
 	}
 	query += " ORDER BY t.updated_at DESC, t.id ASC"
 

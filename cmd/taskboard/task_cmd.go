@@ -18,6 +18,8 @@ func newTaskCmd(repoRoot *string) *cobra.Command {
 	cmd.AddCommand(newTaskRenewCmd(repoRoot))
 	cmd.AddCommand(newTaskReleaseCmd(repoRoot))
 	cmd.AddCommand(newTaskTransitionCmd(repoRoot))
+	cmd.AddCommand(newTaskArchiveCmd(repoRoot))
+	cmd.AddCommand(newTaskDeleteCmd(repoRoot))
 	cmd.AddCommand(newReadyCheckCmd(repoRoot))
 	return cmd
 }
@@ -78,6 +80,7 @@ func newTaskCreateCmd(repoRoot *string) *cobra.Command {
 
 func newTaskListCmd(repoRoot *string) *cobra.Command {
 	var stateRaw string
+	var includeArchived bool
 
 	cmd := &cobra.Command{
 		Use:   "list",
@@ -92,7 +95,7 @@ func newTaskListCmd(repoRoot *string) *cobra.Command {
 				state = &s
 			}
 			return withService(*repoRoot, func(svc *app.Service) error {
-				tasks, err := svc.ListTasks(context.Background(), state)
+				tasks, err := svc.ListTasksWithArchived(context.Background(), state, includeArchived)
 				if err != nil {
 					return err
 				}
@@ -105,7 +108,11 @@ func newTaskListCmd(repoRoot *string) *cobra.Command {
 					if ref == "" {
 						ref = t.ID
 					}
-					cmd.Printf("%s | id=%s | %s | %s | type=%s | parent=%s | rubric=%t\n", ref, t.ID, t.State, t.Title, t.TaskType, parent, t.RubricPassed)
+					archived := "active"
+					if t.ArchivedAt != nil {
+						archived = "archived"
+					}
+					cmd.Printf("%s | id=%s | %s | %s | type=%s | parent=%s | rubric=%t | %s\n", ref, t.ID, t.State, t.Title, t.TaskType, parent, t.RubricPassed, archived)
 				}
 				return nil
 			})
@@ -113,6 +120,7 @@ func newTaskListCmd(repoRoot *string) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&stateRaw, "state", "", "optional state filter")
+	cmd.Flags().BoolVar(&includeArchived, "include-archived", false, "include archived tasks")
 	return cmd
 }
 
@@ -269,6 +277,55 @@ func newReadyCheckCmd(repoRoot *string) *cobra.Command {
 
 	cmd.Flags().StringVar(&id, "id", "", "task ID")
 	af.add(cmd)
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newTaskArchiveCmd(repoRoot *string) *cobra.Command {
+	var id string
+
+	cmd := &cobra.Command{
+		Use:   "archive",
+		Short: "Archive a task (hidden from default list/status views)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return withService(*repoRoot, func(svc *app.Service) error {
+				if err := svc.ArchiveTask(context.Background(), id); err != nil {
+					return err
+				}
+				cmd.Printf("archived %s\n", id)
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "task ID or short ref")
+	_ = cmd.MarkFlagRequired("id")
+	return cmd
+}
+
+func newTaskDeleteCmd(repoRoot *string) *cobra.Command {
+	var id string
+	var force bool
+
+	cmd := &cobra.Command{
+		Use:   "delete",
+		Short: "Permanently delete a task and all task audit records",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if !force {
+				return fmt.Errorf("delete is destructive; re-run with --force")
+			}
+			return withService(*repoRoot, func(svc *app.Service) error {
+				if err := svc.DeleteTask(context.Background(), id, force); err != nil {
+					return err
+				}
+				cmd.Printf("deleted %s\n", id)
+				return nil
+			})
+		},
+	}
+
+	cmd.Flags().StringVar(&id, "id", "", "task ID or short ref")
+	cmd.Flags().BoolVar(&force, "force", false, "required for destructive delete")
 	_ = cmd.MarkFlagRequired("id")
 	return cmd
 }

@@ -25,6 +25,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /tasks", s.handleListTasks)
 	mux.HandleFunc("POST /tasks", s.handleCreateTask)
 	mux.HandleFunc("POST /tasks/", s.handleTaskAction)
+	mux.HandleFunc("DELETE /tasks/", s.handleDeleteTask)
 	return mux
 }
 
@@ -34,6 +35,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 	var state *domain.State
+	includeArchived := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("include_archived")), "true") || strings.TrimSpace(r.URL.Query().Get("include_archived")) == "1"
 	if raw := strings.TrimSpace(r.URL.Query().Get("state")); raw != "" {
 		parsed, err := domain.ParseState(raw)
 		if err != nil {
@@ -43,7 +45,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		state = &parsed
 	}
 
-	tasks, err := s.svc.ListTasks(r.Context(), state)
+	tasks, err := s.svc.ListTasksWithArchived(r.Context(), state, includeArchived)
 	if err != nil {
 		writeError(w, mapStatus(err), err)
 		return
@@ -114,9 +116,25 @@ func (s *Server) handleTaskAction(w http.ResponseWriter, r *http.Request) {
 		s.handleRubric(w, r, taskID)
 	case "ready-check":
 		s.handleReadyCheck(w, r, taskID)
+	case "archive":
+		s.handleArchiveTask(w, r, taskID)
 	default:
 		writeError(w, http.StatusNotFound, errors.New("not found"))
 	}
+}
+
+func (s *Server) handleDeleteTask(w http.ResponseWriter, r *http.Request) {
+	taskID := strings.Trim(strings.TrimPrefix(r.URL.Path, "/tasks/"), "/")
+	if taskID == "" || strings.Contains(taskID, "/") {
+		writeError(w, http.StatusNotFound, errors.New("not found"))
+		return
+	}
+	force := strings.EqualFold(strings.TrimSpace(r.URL.Query().Get("force")), "true") || strings.TrimSpace(r.URL.Query().Get("force")) == "1"
+	if err := s.svc.DeleteTask(r.Context(), taskID, force); err != nil {
+		writeError(w, mapStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
 
 type actorJSON struct {
@@ -317,6 +335,14 @@ func (s *Server) handleReadyCheck(w http.ResponseWriter, r *http.Request, taskID
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ready"})
 }
 
+func (s *Server) handleArchiveTask(w http.ResponseWriter, r *http.Request, taskID string) {
+	if err := s.svc.ArchiveTask(r.Context(), taskID); err != nil {
+		writeError(w, mapStatus(err), err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "archived"})
+}
+
 func mapStatus(err error) int {
 	msg := strings.ToLower(err.Error())
 	switch {
@@ -324,7 +350,7 @@ func mapStatus(err error) int {
 		return http.StatusNotFound
 	case strings.Contains(msg, "actively leased"), strings.Contains(msg, "owned by"), strings.Contains(msg, "expired"):
 		return http.StatusConflict
-	case strings.Contains(msg, "invalid"), strings.Contains(msg, "required"):
+	case strings.Contains(msg, "invalid"), strings.Contains(msg, "required"), strings.Contains(msg, "--force"), strings.Contains(msg, "child tasks"), strings.Contains(msg, "already archived"):
 		return http.StatusBadRequest
 	default:
 		return http.StatusInternalServerError
