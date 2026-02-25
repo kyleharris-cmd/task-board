@@ -105,6 +105,8 @@ Use `tb stat` for your normal async coordination loop:
 - `:cc [optional title]`: create child task from current row context.
 - `:s|:state|:to <state>`: transition highlighted task state.
 - `Tab` after `:s`/`:state`/`:to`: cycle policy-allowed next states, `Enter` to apply.
+- `:a|:archive`: archive highlighted task.
+- `:d !|:delete !`: permanently delete highlighted task (explicit confirmation required).
 
 ### Inline Editor Behavior
 
@@ -123,8 +125,9 @@ Use `tb stat` for your normal async coordination loop:
 For Codex or other agents, prefer explicit CLI flow and machine-readable output:
 
 1. Ensure board exists: `tb init`.
-2. Read board snapshot (`tb codex` for human-readable, `tb codex --json` for machine-readable).
-3. Pick up and move work with lifecycle commands (`tb pickup`, `tb start`, `tb design`, `tb review`, `tb implement`, `tb finish`) or lower-level `tb task ...` commands.
+2. Ask for the next actionable task (`tb next --json`).
+3. Read board snapshot (`tb codex` for human-readable, `tb codex --json` for machine-readable).
+4. Pick up and move work with lifecycle commands (`tb pickup`, `tb start`, `tb design`, `tb review`, `tb implement`, `tb done`) or lower-level `tb task ...` commands.
 4. Persist context/design artifacts via `tb artifact add` or TUI edit flows if intentionally interactive.
 
 Agent identity must be explicit for mutating CLI/API calls:
@@ -155,6 +158,7 @@ Most commands below are useful for scripting, automation, or agent integrations.
 - `taskboard design <task-id>`
 - `taskboard review <task-id> --pass|--fail`
 - `taskboard implement <task-id>`
+- `taskboard done <task-id>`
 - `taskboard finish <task-id>`
 - `taskboard parent create --title ...`
 - `taskboard parent design-edit <parent-id>`
@@ -162,6 +166,7 @@ Most commands below are useful for scripting, automation, or agent integrations.
 - `taskboard pickup <child-id>`
 - `taskboard status` (alias: `taskboard stat`)
 - `taskboard codex [--json]`
+- `taskboard next [--json]`
 
 ## HTTP API (v1)
 

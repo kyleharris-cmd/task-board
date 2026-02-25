@@ -74,6 +74,30 @@ func TestParseStatusCommand_CreateRequiresSpaceBeforeTitle(t *testing.T) {
 	if verb != "s" || arg != "done" {
 		t.Fatalf("parseStatusCommand(s done) = (%q, %q), want (s, done)", verb, arg)
 	}
+
+	verb, arg, err = parseStatusCommand(`a`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(a) unexpected error: %v", err)
+	}
+	if verb != "a" || arg != "" {
+		t.Fatalf("parseStatusCommand(a) = (%q, %q), want (a, \"\")", verb, arg)
+	}
+
+	verb, arg, err = parseStatusCommand(`d !`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(d !) unexpected error: %v", err)
+	}
+	if verb != "d" || arg != "!" {
+		t.Fatalf("parseStatusCommand(d !) = (%q, %q), want (d, !)", verb, arg)
+	}
+
+	verb, arg, err = parseStatusCommand(`d!`)
+	if err != nil {
+		t.Fatalf("parseStatusCommand(d!) unexpected error: %v", err)
+	}
+	if verb != "d" || arg != "!" {
+		t.Fatalf("parseStatusCommand(d!) = (%q, %q), want (d, !)", verb, arg)
+	}
 }
 
 func TestParseTitleAndBody(t *testing.T) {

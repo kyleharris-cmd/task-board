@@ -410,6 +410,51 @@ func (m statusModel) updateCommandMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 					return statusOpMsg{status: fmt.Sprintf("moved %s to %s", ref, toState)}
 				}
 			}
+			if verb == "a" || verb == "archive" {
+				row, ok := m.selected()
+				if !ok {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Archive failed", err: errors.New("no rows visible")}
+					}
+				}
+				if err := m.svc.ArchiveTask(context.Background(), row.TaskID); err != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Archive failed", err: err}
+					}
+				}
+				ref := row.ShortRef
+				if ref == "" {
+					ref = row.TaskID
+				}
+				return m, func() tea.Msg {
+					return statusOpMsg{status: fmt.Sprintf("archived %s", ref)}
+				}
+			}
+			if verb == "d" || verb == "delete" {
+				if strings.TrimSpace(arg) != "!" {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Delete blocked", err: errors.New("use :d ! or :delete ! to confirm permanent delete")}
+					}
+				}
+				row, ok := m.selected()
+				if !ok {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Delete failed", err: errors.New("no rows visible")}
+					}
+				}
+				if err := m.svc.DeleteTask(context.Background(), row.TaskID, true); err != nil {
+					return m, func() tea.Msg {
+						return statusOpMsg{status: "Delete failed", err: err}
+					}
+				}
+				ref := row.ShortRef
+				if ref == "" {
+					ref = row.TaskID
+				}
+				return m, func() tea.Msg {
+					return statusOpMsg{status: fmt.Sprintf("deleted %s", ref)}
+				}
+			}
 			return m, func() tea.Msg {
 				return statusOpMsg{status: "Invalid command", err: fmt.Errorf("unsupported command %q", verb)}
 			}
@@ -993,6 +1038,8 @@ func (m statusModel) renderHelpOverlay(background string) string {
 			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
 			":s|:state|:to <state>  transition highlighted task state",
 			"  (tab after :s cycles allowed next states)",
+			":a|:archive  archive highlighted task",
+			":d !|:delete !  permanently delete highlighted task",
 			"",
 			"Inline Editor",
 			"tab : open/cycle path suggestions",
@@ -1288,6 +1335,9 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 			return prefix, arg, nil
 		}
 	}
+	if strings.HasPrefix(lower, "d!") || strings.HasPrefix(lower, "delete!") {
+		return "d", "!", nil
+	}
 
 	parts := strings.Fields(cmdText)
 	if len(parts) == 0 {
@@ -1318,6 +1368,13 @@ func parseStatusCommand(cmdText string) (verb, arg string, err error) {
 		}
 		stateArg := strings.TrimSpace(cmdText[len(parts[0]):])
 		return verb, stateArg, nil
+	case "a", "archive":
+		return verb, "", nil
+	case "delete", "d":
+		if len(parts) < 2 {
+			return verb, "", nil
+		}
+		return verb, strings.TrimSpace(cmdText[len(parts[0]):]), nil
 	default:
 		return "", "", fmt.Errorf("unsupported command %q", verb)
 	}
