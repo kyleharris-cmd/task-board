@@ -1021,39 +1021,34 @@ func (m statusModel) renderHelpOverlay(background string) string {
 	lines := []string{
 		"Command Palette",
 		"",
-		"Navigation",
-		"j/k : move cursor",
-		"tab : toggle filter (all / agent-active)",
-		"space : collapse/expand parent row",
-		"enter : open highlighted task",
-		"r : refresh now",
-		"q : quit",
+		"Most Used",
+		"j/k move  enter open  tab filter  ? help  q quit",
+		":s <state>   :cp [title]   :cc [title]   :e<row>",
 		"",
-		"Command Mode",
+		"Navigation",
+		"space collapse/expand  r refresh",
+		"",
+		"Commands",
 	}
 	if m.editable {
 		lines = append(lines,
-			":(e)dit <row>   (examples: :e1, :edit1, :e 1, :edit 1)",
-			":cp [optional title]  create parent from editor (line 1: Title: ..., rest=content)",
-			":cc [optional title]  create child from editor (line 1: Title: ..., rest=content)",
-			":s|:state|:to <state>  transition highlighted task state",
-			"  (tab after :s cycles allowed next states)",
-			":a|:archive  archive highlighted task",
-			":d !|:delete !  permanently delete highlighted task",
+			":e<row>|:edit<row>  edit row artifact",
+			":cp [title]         create parent task",
+			":cc [title]         create child task",
+			":s <state>          transition state (Tab cycles allowed next)",
+			":a                  archive highlighted task",
+			"",
+			"Danger",
+			":d! or :delete !    permanently delete highlighted task",
 			"",
 			"Inline Editor",
-			"tab : open/cycle path suggestions",
-			"j/k : move suggestion selection",
-			"enter : accept selected suggestion",
-			"ctrl+s or esc : save",
-			"ctrl+q : cancel",
+			"tab suggestions  j/k select  enter accept  esc/ctrl+s save  ctrl+q cancel",
 		)
 		if m.keymapMode == keymapVim {
 			lines = append(lines,
 				"",
 				"Vim Mode (TB_KEYMAP=vim)",
-				"status: gg/G jump, h/l collapse/expand",
-				"editor: starts NORMAL, i/a/o enter INSERT, Esc returns NORMAL",
+				"status: gg/G jump, h/l collapse/expand  editor: i/a/o insert, Esc normal",
 			)
 		}
 	} else {
@@ -1065,7 +1060,7 @@ func (m statusModel) renderHelpOverlay(background string) string {
 	)
 
 	dimmed := lipgloss.NewStyle().Foreground(lipgloss.Color("240")).Render(background)
-	boxWidth := min(78, max(52, m.width-12))
+	boxWidth := min(80, max(56, m.width-12))
 	box := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Foreground(lipgloss.Color("252")).
